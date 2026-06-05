@@ -1,0 +1,34 @@
+# Go binaries
+*.exe
+*.dll
+*.so
+*.dylib
+rate-limiter
+backend/rate-limiter/rate-limiter
+
+# Go test / coverage
+*.test
+*.out
+coverage.txt
+
+# Go modules
+vendor/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (for later)
+node_modules/
+npm-debug.log*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
