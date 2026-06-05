@@ -3,13 +3,13 @@
 A distributed rate-limiting service written in Go and backed by Redis. Exposes
 an HTTP API that lets clients enforce per-key request limits with configurable
 algorithms (starting with fixed-window) and will grow over 12 days to include
-multiple algorithms (sliding window, token bucket, leaky bucket), analytics,
-and a dashboard.
+multiple algorithms (sliding window, token bucket), analytics, and a dashboard.
 
 ## Status
 
-**Day 1 of 12** — fixed-window algorithm, HTTP `/check` + `/health` endpoints,
-Redis backend, Docker setup.
+**Day 2 of 12** — three algorithms (fixed window, sliding window, token
+bucket), all using Redis (Lua scripts for sliding + token), `/check` +
+`/health` endpoints, Docker setup.
 
 ## Quick start
 
@@ -19,18 +19,26 @@ Start Redis and the rate-limiter service:
 docker-compose up --build
 ```
 
-In another terminal, send a request:
+In another terminal, exercise each algorithm. Each example sends 10 requests
+to fill the budget; the 11th will come back as `429`.
 
 ```bash
-curl -i -X POST "http://localhost:8080/check?key=test&limit=10&window=60"
+# Fixed window — 10 requests per 60s, window aligned to wall clock
+curl -i -X POST "http://localhost:8080/check?key=test&algorithm=fixed&limit=10&window=60"
+
+# Sliding window — same shape, but the window slides with each request
+curl -i -X POST "http://localhost:8080/check?key=test&algorithm=sliding&limit=10&window=60"
+
+# Token bucket — capacity 10, refills at 1 token/sec
+curl -i -X POST "http://localhost:8080/check?key=test&algorithm=token&capacity=10&refill=1"
 ```
 
-Loop to see the limiter trip after the 10th request:
+Loop one of them to see the limiter trip:
 
 ```bash
 for i in $(seq 1 12); do
   curl -s -o /dev/null -w "%{http_code}\n" \
-    -X POST "http://localhost:8080/check?key=test&limit=10&window=60"
+    -X POST "http://localhost:8080/check?key=test&algorithm=sliding&limit=10&window=60"
 done
 ```
 
