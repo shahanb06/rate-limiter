@@ -3,7 +3,6 @@
 *.dll
 *.so
 *.dylib
-rate-limiter
 backend/rate-limiter/rate-limiter
 
 # Go test / coverage
