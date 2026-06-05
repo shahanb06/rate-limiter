@@ -54,6 +54,27 @@ Tear everything down:
 docker-compose down
 ```
 
+## Testing
+
+The service ships with a Go test suite that runs with zero external setup —
+no Docker, no Redis — using [miniredis](https://github.com/alicebob/miniredis)
+as an in-process backend.
+
+```bash
+cd backend/rate-limiter && go test ./... -race
+```
+
+What's covered:
+
+- Table-driven unit tests for all three algorithms (fixed window, sliding
+  window, token bucket), including boundary behavior and refill / aging.
+- HTTP handler tests for `/check` and `/health` — status codes, JSON body,
+  and the `X-RateLimit-*` / `Retry-After` headers.
+- A concurrency test that fires **100 goroutines at a limit of 50** and
+  asserts exactly 50 are admitted — proves the Redis Lua scripts (and the
+  fixed-window `INCR`) prevent over-admission under contention.
+- The whole suite is verified race-clean (`go test -race`).
+
 ## API
 
 ### `POST /check`
