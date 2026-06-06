@@ -5,9 +5,66 @@ an HTTP API that lets clients enforce per-key request limits with configurable
 algorithms (starting with fixed-window) and will grow over 12 days to include
 multiple algorithms (sliding window, token bucket), analytics, and a dashboard.
 
+## Live demo
+
+Deployed on Fly.io (region `iad`) with Upstash Redis (`us-east-1`):
+
+**https://rate-limiter-shahanb06.fly.dev**
+
+```bash
+# Service health (Redis reachability check)
+curl https://rate-limiter-shahanb06.fly.dev/health
+
+# Trip the rate limiter: first 5 return 200, then 429s for the rest of the window
+for i in $(seq 1 7); do
+  curl -i -X POST "https://rate-limiter-shahanb06.fly.dev/check?key=demo&algorithm=fixed&limit=5&window=60" \
+    | head -8
+  echo
+done
+```
+
+The Fly machines are configured for scale-to-zero — the first request after
+idle may add ~300 ms of cold-start latency.
+
 ## Status
 
-Day 3 of 12 — three algorithms (fixed window, sliding window, token bucket) with atomic Redis Lua scripts, per-key configuration stored in Redis (PUT/GET /config), production HTTP headers (X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After on 429), structured JSON logging via slog with request latency, validated JSON error responses. /check and /health endpoints, Docker setup.
+Day 4 of 12 — live at https://rate-limiter-shahanb06.fly.dev, benchmarked at
+844 req/s sustained, ~5,000 req/s burst (p95 ~2ms) on a laptop (see
+[Benchmarks](#benchmarks)). Three
+algorithms (fixed window, sliding window, token bucket) with atomic Redis
+Lua scripts, per-key configuration stored in Redis (`PUT`/`GET /config`),
+production HTTP headers (`X-RateLimit-*`, `Retry-After`), structured JSON
+logging via `slog` with request latency, validated JSON error responses.
+
+## Benchmarks
+
+Load tested with k6 against the local docker-compose stack on an 8-core arm64
+laptop. Full results (per-scenario detail, per-algorithm latency, methodology
+and caveats) are in [`benchmarks/results.md`](benchmarks/results.md).
+
+| Scenario | Throughput | p50 | p95 | p99 | HTTP failures |
+|---|---|---|---|---|---|
+| sustained (1000 req/s × 30s)    | 844 req/s | 0.76 ms | 1.47 ms | 21.7 ms | 0 / 37,999 |
+| burst (5000 req/s × 10s)        | **4,995 req/s** | 0.41 ms | 2.10 ms | 37.3 ms | 0 / 49,958 |
+| mixed (600 req/s across 3 algos)| 600 req/s | 0.82 ms | 1.37 ms | 2.43 ms | 0 / 18,000 |
+
+Atomic Lua paths (sliding/token) come in within ~10% of the fixed-window
+`INCR` path:
+
+| Algorithm | p95 | p99 |
+|---|---|---|
+| fixed   | 1.30 ms | 2.41 ms |
+| sliding | 1.37 ms | 2.52 ms |
+| token   | 1.40 ms | 2.35 ms |
+
+Reproduce with:
+
+```bash
+docker compose up -d --build
+SCENARIO=sustained docker run --rm -i --add-host=host.docker.internal:host-gateway \
+  -v "$(pwd):/scripts" -e BASE_URL=http://host.docker.internal:8080 -e SCENARIO=$SCENARIO \
+  grafana/k6 run /scripts/k6-load-test.js
+```
 
 ## Quick start
 
