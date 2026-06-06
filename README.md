@@ -7,9 +7,7 @@ multiple algorithms (sliding window, token bucket), analytics, and a dashboard.
 
 ## Status
 
-**Day 2 of 12** — three algorithms (fixed window, sliding window, token
-bucket), all using Redis (Lua scripts for sliding + token), `/check` +
-`/health` endpoints, Docker setup.
+Day 3 of 12 — three algorithms (fixed window, sliding window, token bucket) with atomic Redis Lua scripts, per-key configuration stored in Redis (PUT/GET /config), production HTTP headers (X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After on 429), structured JSON logging via slog with request latency, validated JSON error responses. /check and /health endpoints, Docker setup.
 
 ## Quick start
 
