@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,6 +15,8 @@ import (
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -22,12 +24,14 @@ func main() {
 
 	rdb, err := NewRedisClient()
 	if err != nil {
-		log.Fatalf("failed to connect to redis: %v", err)
+		slog.Error("redis connect failed", "err", err.Error())
+		os.Exit(1)
 	}
 	defer rdb.Close()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/check", CheckHandler(rdb))
+	mux.HandleFunc("/config", ConfigHandler(rdb))
 	mux.HandleFunc("/health", HealthHandler(rdb))
 
 	srv := &http.Server{
@@ -39,7 +43,7 @@ func main() {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		log.Printf("Server starting on port %s...", port)
+		slog.Info("server starting", "port", port)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErr <- err
 		}
@@ -50,17 +54,17 @@ func main() {
 
 	select {
 	case sig := <-stop:
-		log.Printf("Received %s, shutting down...", sig)
+		slog.Info("shutdown signal", "signal", sig.String())
 	case err := <-serverErr:
-		log.Printf("Server error: %v", err)
+		slog.Error("server error", "err", err.Error())
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Printf("shutdown error: %v", err)
+		slog.Error("shutdown error", "err", err.Error())
 	}
-	log.Println("Server stopped")
+	slog.Info("server stopped")
 }
 
 // HealthHandler reports liveness and whether Redis is reachable.

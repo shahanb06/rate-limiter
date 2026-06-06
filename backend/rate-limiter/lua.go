@@ -9,7 +9,9 @@ import "github.com/redis/go-redis/v9"
 // ARGV[2] = window seconds              (int)
 // ARGV[3] = unique member               (string, must be unique per request)
 //
-// Returns {allowed, remaining, retry_after}.
+// Returns {allowed, remaining, retry_after, reset_unix_seconds}.
+// reset is the unix-seconds timestamp when the oldest currently-tracked entry
+// will age out (i.e. when "remaining" goes up by one). 0 if no entries exist.
 //
 // Time is read from redis.call('TIME') so all replicas agree on "now" and the
 // caller's clock does not influence the window boundary.
@@ -27,20 +29,29 @@ local cutoff    = now_us - window_us
 redis.call('ZREMRANGEBYSCORE', key, '-inf', cutoff)
 local count = redis.call('ZCARD', key)
 
+local reset = 0
+
 if count < limit then
     redis.call('ZADD', key, now_us, member)
     redis.call('EXPIRE', key, window)
-    return {1, limit - count - 1, 0}
+    local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
+    if #oldest >= 2 then
+        local oldest_score = tonumber(oldest[2])
+        reset = math.ceil((oldest_score + window_us) / 1000000)
+    end
+    return {1, limit - count - 1, 0, reset}
 end
 
 local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
 local retry  = 0
 if #oldest >= 2 then
     local oldest_score = tonumber(oldest[2])
-    retry = math.ceil((oldest_score + window_us - now_us) / 1000000)
+    local age_out_us   = oldest_score + window_us
+    retry = math.ceil((age_out_us - now_us) / 1000000)
     if retry < 0 then retry = 0 end
+    reset = math.ceil(age_out_us / 1000000)
 end
-return {0, 0, retry}
+return {0, 0, retry, reset}
 `)
 
 // tokenBucketScript implements a token-bucket limiter on a Redis hash.
@@ -50,7 +61,9 @@ return {0, 0, retry}
 // ARGV[2] = refill rate (tokens/sec)    (float)
 // ARGV[3] = requested tokens            (int, usually 1)
 //
-// Returns {allowed, remaining (floor), retry_after_seconds}.
+// Returns {allowed, remaining (floor), retry_after_seconds, reset_unix_seconds}.
+// reset is the unix-seconds timestamp when floor(tokens) will increase by one
+// (i.e. when "remaining" goes up). 0 if the bucket is already at capacity.
 //
 // Time is read from redis.call('TIME') so the bucket refills using Redis's
 // clock, avoiding skew across multiple rate-limiter instances.
@@ -90,5 +103,14 @@ redis.call('HSET', key, 'tokens', tokens, 'last_refill', now)
 local ttl = math.ceil(capacity / rate) + 60
 redis.call('EXPIRE', key, ttl)
 
-return {allowed, math.floor(tokens), retry_after}
+local reset = 0
+if tokens < capacity then
+    local next_int = math.floor(tokens) + 1
+    if next_int > capacity then next_int = capacity end
+    if tokens < next_int then
+        reset = math.ceil(now + (next_int - tokens) / rate)
+    end
+end
+
+return {allowed, math.floor(tokens), retry_after, reset}
 `)
