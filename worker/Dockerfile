@@ -8,6 +8,6 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install -r requirements.txt
 
-COPY worker.py ./
+COPY worker.py schema.sql ./
 
 CMD ["python", "worker.py"]
