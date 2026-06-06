@@ -57,13 +57,14 @@ func main() {
 		defer pgPool.Close()
 	}
 
+	cors := NewCORS()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/check", CheckHandler(rdb, emitter))
 	mux.HandleFunc("/config", ConfigHandler(rdb))
 	mux.HandleFunc("/health", HealthHandler(rdb, emitter, pgPool))
-	mux.HandleFunc("/analytics/keys", AnalyticsKeysHandler(store))
-	mux.HandleFunc("/analytics/summary", AnalyticsSummaryHandler(store))
-	mux.HandleFunc("/analytics/timeseries", AnalyticsTimeseriesHandler(store))
+	mux.Handle("/analytics/keys", cors(AnalyticsKeysHandler(store)))
+	mux.Handle("/analytics/summary", cors(AnalyticsSummaryHandler(store)))
+	mux.Handle("/analytics/timeseries", cors(AnalyticsTimeseriesHandler(store)))
 
 	srv := &http.Server{
 		Addr:         ":" + port,
