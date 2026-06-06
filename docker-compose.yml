@@ -11,6 +11,25 @@ services:
       timeout: 3s
       retries: 5
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: rate-limiter-postgres
+    environment:
+      POSTGRES_USER: ratelimiter
+      POSTGRES_PASSWORD: ratelimiter
+      POSTGRES_DB: ratelimiter
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./worker/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ratelimiter -d ratelimiter"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   rate-limiter:
     build:
       context: ./backend/rate-limiter
@@ -24,3 +43,23 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+
+  worker:
+    build:
+      context: ./worker
+    container_name: rate-limiter-worker
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://ratelimiter:ratelimiter@postgres:5432/ratelimiter
+      STREAM: rl:events
+      GROUP: rl-workers
+      CONSUMER: worker-1
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

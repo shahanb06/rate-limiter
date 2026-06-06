@@ -29,8 +29,12 @@ func main() {
 	}
 	defer rdb.Close()
 
+	emitter := NewEventEmitter(rdb, "rl:events", 1024, 10000)
+	emitterCtx, emitterCancel := context.WithCancel(context.Background())
+	go emitter.Run(emitterCtx)
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/check", CheckHandler(rdb))
+	mux.HandleFunc("/check", CheckHandler(rdb, emitter))
 	mux.HandleFunc("/config", ConfigHandler(rdb))
 	mux.HandleFunc("/health", HealthHandler(rdb))
 
@@ -64,6 +68,14 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		slog.Error("shutdown error", "err", err.Error())
 	}
+
+	emitterCancel()
+	select {
+	case <-emitter.Done():
+	case <-time.After(3 * time.Second):
+		slog.Warn("event emitter drain timeout")
+	}
+
 	slog.Info("server stopped")
 }
 

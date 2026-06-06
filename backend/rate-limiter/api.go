@@ -32,7 +32,9 @@ var errBadParam = errors.New("bad param")
 // Configuration precedence: a per-key config stored in Redis (see ConfigHandler)
 // fully overrides query-param defaults. When no stored config exists, params
 // from the URL are used, falling back to the same defaults as Day 2.
-func CheckHandler(rdb *redis.Client) http.HandlerFunc {
+//
+// emitter may be nil, in which case no analytics events are produced.
+func CheckHandler(rdb *redis.Client, emitter *EventEmitter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
@@ -120,6 +122,16 @@ func CheckHandler(rdb *redis.Client) http.HandlerFunc {
 			"status", status,
 			"latency_ms", latency.Milliseconds(),
 		)
+
+		if emitter != nil {
+			emitter.Emit(Event{
+				Key:       key,
+				Algorithm: cfg.Algorithm,
+				Allowed:   allowed,
+				Status:    status,
+				TS:        start,
+			})
+		}
 
 		w.WriteHeader(status)
 		_ = json.NewEncoder(w).Encode(CheckResponse{

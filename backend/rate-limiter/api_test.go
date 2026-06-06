@@ -20,7 +20,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 	rdb, _ := newTestRedis(t) // defined in limiter_test.go
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/check", CheckHandler(rdb))
+	mux.HandleFunc("/check", CheckHandler(rdb, nil))
 	mux.HandleFunc("/config", ConfigHandler(rdb))
 	mux.HandleFunc("/health", HealthHandler(rdb))
 
