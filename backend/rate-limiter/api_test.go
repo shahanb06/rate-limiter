@@ -22,7 +22,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/check", CheckHandler(rdb, nil))
 	mux.HandleFunc("/config", ConfigHandler(rdb))
-	mux.HandleFunc("/health", HealthHandler(rdb))
+	mux.HandleFunc("/health", HealthHandler(rdb, nil, nil))
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -182,7 +182,7 @@ func TestHandlerHealth(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status=%d, want 200", resp.StatusCode)
 	}
-	var body map[string]string
+	var body map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
@@ -191,6 +191,12 @@ func TestHandlerHealth(t *testing.T) {
 	}
 	if body["redis"] != "connected" {
 		t.Errorf("redis=%q, want connected", body["redis"])
+	}
+	if body["postgres"] != "disabled" {
+		t.Errorf("postgres=%q, want disabled", body["postgres"])
+	}
+	if _, ok := body["events_dropped"].(float64); !ok {
+		t.Errorf("events_dropped missing or wrong type: %v", body["events_dropped"])
 	}
 }
 

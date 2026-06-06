@@ -38,6 +38,7 @@ services:
       - "8080:8080"
     environment:
       REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://ratelimiter:ratelimiter@postgres:5432/ratelimiter
       PORT: "8080"
     depends_on:
       redis:

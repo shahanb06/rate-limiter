@@ -100,6 +100,68 @@ func TestCheckUnaffectedWhenEventStreamFails(t *testing.T) {
 	}
 }
 
+// TestEmitDropCounterOnOverflow proves the channel-overflow drop path
+// increments the drop counter.
+func TestEmitDropCounterOnOverflow(t *testing.T) {
+	rdb, _ := newTestRedis(t)
+	// Buffer of 4; no drainer running, so the 5th emit onward overflows.
+	emitter := NewEventEmitter(rdb, "rl:events", 4, 100)
+
+	const total = 100
+	for i := 0; i < total; i++ {
+		emitter.Emit(Event{
+			Key:       "k",
+			Algorithm: AlgoFixed,
+			Allowed:   true,
+			Status:    200,
+			TS:        time.Now(),
+		})
+	}
+
+	want := uint64(total - 4)
+	if got := emitter.Dropped(); got != want {
+		t.Errorf("Dropped=%d, want %d (buffer 4, total %d)", got, want, total)
+	}
+}
+
+// TestEmitDropCounterOnRedisFailure proves the writeBatch error path
+// increments the drop counter by the batch size.
+func TestEmitDropCounterOnRedisFailure(t *testing.T) {
+	streamRDB := brokenRedis(t)
+	emitter := NewEventEmitter(streamRDB, "rl:events", 256, 100)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go emitter.Run(ctx)
+	defer func() {
+		cancel()
+		<-emitter.Done()
+	}()
+
+	const n = 50
+	for i := 0; i < n; i++ {
+		emitter.Emit(Event{
+			Key:       "k",
+			Algorithm: AlgoFixed,
+			Allowed:   true,
+			Status:    200,
+			TS:        time.Now(),
+		})
+	}
+
+	// Wait for the drainer's flush ticker (50ms) plus the broken-pipeline
+	// dial timeout (200ms) to elapse. 2s is plenty.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if emitter.Dropped() >= n {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if got := emitter.Dropped(); got < n {
+		t.Errorf("Dropped=%d, want >= %d after Redis-write failures", got, n)
+	}
+}
+
 // TestEmitNeverBlocks confirms Emit returns immediately even when the channel
 // buffer is exhausted and the drainer is not running.
 func TestEmitNeverBlocks(t *testing.T) {

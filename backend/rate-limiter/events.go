@@ -31,8 +31,9 @@ type EventEmitter struct {
 	batchN  int
 	flushIv time.Duration
 
-	closed atomic.Bool
-	done   chan struct{}
+	closed  atomic.Bool
+	done    chan struct{}
+	dropped atomic.Uint64
 }
 
 // NewEventEmitter constructs an emitter writing to streamName with an
@@ -54,13 +55,20 @@ func NewEventEmitter(rdb *redis.Client, streamName string, bufferSize int, maxLe
 // the emitter is closed. Safe to call from any goroutine; never blocks.
 func (e *EventEmitter) Emit(ev Event) {
 	if e.closed.Load() {
+		e.dropped.Add(1)
 		return
 	}
 	select {
 	case e.ch <- ev:
 	default:
-		// Buffer full — drop. Day 7 will add a counter.
+		e.dropped.Add(1)
 	}
+}
+
+// Dropped returns the cumulative count of events dropped across both paths:
+// channel-overflow in Emit and Redis pipeline failures in writeBatch.
+func (e *EventEmitter) Dropped() uint64 {
+	return e.dropped.Load()
 }
 
 // Run drains the channel until ctx is cancelled, then flushes whatever is
@@ -137,6 +145,7 @@ func (e *EventEmitter) writeBatch(batch []Event) {
 		})
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
+		e.dropped.Add(uint64(len(batch)))
 		slog.Warn("event stream write failed",
 			"err", err.Error(),
 			"dropped", len(batch),

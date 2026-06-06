@@ -1,0 +1,372 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+)
+
+// fakeStore is a hand-rolled AnalyticsStore for handler tests. Each method's
+// behavior is configurable: canned return value or injected error.
+type fakeStore struct {
+	listKeysRet []string
+	listKeysErr error
+
+	summaryRet SummaryRow
+	summaryErr error
+
+	tsPoints []TimeseriesPoint
+	tsErr    error
+
+	// Captured inputs from the last call (for parameter-validation assertions).
+	gotSummaryKey string
+	gotTSKey      string
+	gotTSSince    time.Time
+}
+
+func (f *fakeStore) ListKeys(ctx context.Context) ([]string, error) {
+	return f.listKeysRet, f.listKeysErr
+}
+func (f *fakeStore) Summary(ctx context.Context, key string) (SummaryRow, error) {
+	f.gotSummaryKey = key
+	return f.summaryRet, f.summaryErr
+}
+func (f *fakeStore) Timeseries(ctx context.Context, key string, since time.Time) ([]TimeseriesPoint, error) {
+	f.gotTSKey = key
+	f.gotTSSince = since
+	return f.tsPoints, f.tsErr
+}
+
+// ----- /analytics/keys -----
+
+func TestAnalyticsKeys(t *testing.T) {
+	store := &fakeStore{listKeysRet: []string{"alice", "bob"}}
+	srv := httptest.NewServer(AnalyticsKeysHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want 200", resp.StatusCode)
+	}
+	var body struct {
+		Keys []string `json:"keys"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Keys) != 2 || body.Keys[0] != "alice" || body.Keys[1] != "bob" {
+		t.Errorf("keys=%v, want [alice bob]", body.Keys)
+	}
+}
+
+func TestAnalyticsKeys_NilStore503(t *testing.T) {
+	srv := httptest.NewServer(AnalyticsKeysHandler(nil))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status=%d, want 503", resp.StatusCode)
+	}
+}
+
+func TestAnalyticsKeys_StoreError503(t *testing.T) {
+	store := &fakeStore{listKeysErr: errors.New("db gone")}
+	srv := httptest.NewServer(AnalyticsKeysHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status=%d, want 503", resp.StatusCode)
+	}
+}
+
+// ----- /analytics/summary -----
+
+func TestAnalyticsSummary(t *testing.T) {
+	store := &fakeStore{summaryRet: SummaryRow{Allowed: 80, Rejected: 20, Total: 100}}
+	srv := httptest.NewServer(AnalyticsSummaryHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?key=alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want 200", resp.StatusCode)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body["key"] != "alice" {
+		t.Errorf("key=%v, want alice", body["key"])
+	}
+	if body["allowed"].(float64) != 80 {
+		t.Errorf("allowed=%v, want 80", body["allowed"])
+	}
+	if body["rejected"].(float64) != 20 {
+		t.Errorf("rejected=%v, want 20", body["rejected"])
+	}
+	if body["total"].(float64) != 100 {
+		t.Errorf("total=%v, want 100", body["total"])
+	}
+	if rate := body["rejection_rate"].(float64); rate < 0.199 || rate > 0.201 {
+		t.Errorf("rejection_rate=%v, want ~0.2", rate)
+	}
+	if store.gotSummaryKey != "alice" {
+		t.Errorf("store got key=%q, want alice", store.gotSummaryKey)
+	}
+}
+
+func TestAnalyticsSummary_ZeroTotalRateIsZero(t *testing.T) {
+	store := &fakeStore{summaryRet: SummaryRow{}}
+	srv := httptest.NewServer(AnalyticsSummaryHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?key=nobody")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	if body["rejection_rate"].(float64) != 0 {
+		t.Errorf("rejection_rate=%v, want 0 (no division by zero)", body["rejection_rate"])
+	}
+}
+
+func TestAnalyticsSummary_MissingKey400(t *testing.T) {
+	store := &fakeStore{}
+	srv := httptest.NewServer(AnalyticsSummaryHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400", resp.StatusCode)
+	}
+}
+
+func TestAnalyticsSummary_NilStore503(t *testing.T) {
+	srv := httptest.NewServer(AnalyticsSummaryHandler(nil))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?key=alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status=%d, want 503", resp.StatusCode)
+	}
+}
+
+// ----- /analytics/timeseries -----
+
+func TestAnalyticsTimeseries(t *testing.T) {
+	bucket := time.Date(2026, 6, 6, 21, 15, 0, 0, time.UTC)
+	store := &fakeStore{tsPoints: []TimeseriesPoint{
+		{BucketStart: bucket, Allowed: 3, Rejected: 2, Total: 5},
+	}}
+	srv := httptest.NewServer(AnalyticsTimeseriesHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?key=alice&since=30m")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want 200", resp.StatusCode)
+	}
+	var body struct {
+		Key    string            `json:"key"`
+		Since  string            `json:"since"`
+		Points []TimeseriesPoint `json:"points"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Key != "alice" {
+		t.Errorf("key=%q, want alice", body.Key)
+	}
+	if len(body.Points) != 1 || body.Points[0].Total != 5 {
+		t.Errorf("points=%v", body.Points)
+	}
+	if store.gotTSKey != "alice" {
+		t.Errorf("store got key=%q", store.gotTSKey)
+	}
+	// 30m before now, give or take a couple of seconds.
+	diff := time.Since(store.gotTSSince)
+	if diff < 29*time.Minute || diff > 31*time.Minute {
+		t.Errorf("since=%v, want ~30m ago", diff)
+	}
+}
+
+func TestAnalyticsTimeseries_DefaultSinceIsOneHour(t *testing.T) {
+	store := &fakeStore{}
+	srv := httptest.NewServer(AnalyticsTimeseriesHandler(store))
+	t.Cleanup(srv.Close)
+
+	if _, err := http.Get(srv.URL + "?key=alice"); err != nil {
+		t.Fatal(err)
+	}
+	diff := time.Since(store.gotTSSince)
+	if diff < 59*time.Minute || diff > 61*time.Minute {
+		t.Errorf("default since=%v, want ~1h ago", diff)
+	}
+}
+
+func TestAnalyticsTimeseries_RFC3339Since(t *testing.T) {
+	store := &fakeStore{}
+	srv := httptest.NewServer(AnalyticsTimeseriesHandler(store))
+	t.Cleanup(srv.Close)
+
+	want := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	if _, err := http.Get(srv.URL + "?key=alice&since=" + want.Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
+	if !store.gotTSSince.Equal(want) {
+		t.Errorf("since=%v, want %v", store.gotTSSince, want)
+	}
+}
+
+func TestAnalyticsTimeseries_BadSince400(t *testing.T) {
+	store := &fakeStore{}
+	srv := httptest.NewServer(AnalyticsTimeseriesHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?key=alice&since=not-a-duration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400", resp.StatusCode)
+	}
+}
+
+func TestAnalyticsTimeseries_MissingKey400(t *testing.T) {
+	store := &fakeStore{}
+	srv := httptest.NewServer(AnalyticsTimeseriesHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400", resp.StatusCode)
+	}
+}
+
+func TestAnalyticsTimeseries_NilStore503(t *testing.T) {
+	srv := httptest.NewServer(AnalyticsTimeseriesHandler(nil))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?key=alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status=%d, want 503", resp.StatusCode)
+	}
+}
+
+// ----- /check is untouched by analytics wiring -----
+
+// Confirms that adding the analytics routes (with a nil store) to the same mux
+// does not regress /check. /check must work whether or not Postgres is wired.
+func TestCheckUnchangedByAnalyticsWiring(t *testing.T) {
+	rdb, _ := newTestRedis(t)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/check", CheckHandler(rdb, nil))
+	mux.HandleFunc("/analytics/keys", AnalyticsKeysHandler(nil))
+	mux.HandleFunc("/analytics/summary", AnalyticsSummaryHandler(nil))
+	mux.HandleFunc("/analytics/timeseries", AnalyticsTimeseriesHandler(nil))
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Post(srv.URL+"/check?key=t&algorithm=fixed&limit=2&window=60", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("/check status=%d, want 200", resp.StatusCode)
+	}
+
+	// Same key should still get a 429 on its 3rd hit — proves limiter state is real.
+	for i := 0; i < 2; i++ {
+		r, err := http.Post(srv.URL+"/check?key=t&algorithm=fixed&limit=2&window=60", "", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Body.Close()
+		if i == 1 && r.StatusCode != http.StatusTooManyRequests {
+			t.Errorf("3rd /check status=%d, want 429", r.StatusCode)
+		}
+	}
+
+	// And the nil-store analytics endpoint should be 503 on the same mux.
+	r, err := http.Get(srv.URL + "/analytics/keys")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Body.Close()
+	if r.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("/analytics/keys with nil store status=%d, want 503", r.StatusCode)
+	}
+}
+
+// ----- parseSince unit -----
+
+func TestParseSince(t *testing.T) {
+	now := time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		in      string
+		want    time.Time
+		wantErr bool
+	}{
+		{"", now.Add(-time.Hour), false},
+		{"1h", now.Add(-time.Hour), false},
+		{"30m", now.Add(-30 * time.Minute), false},
+		{"-1h", now.Add(-time.Hour), false}, // negative duration normalized
+		{"2026-06-01T00:00:00Z", time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC), false},
+		{"garbage", time.Time{}, true},
+	}
+	for _, c := range cases {
+		got, err := parseSince(c.in, now)
+		if (err != nil) != c.wantErr {
+			t.Errorf("parseSince(%q): err=%v, wantErr=%v", c.in, err, c.wantErr)
+		}
+		if !c.wantErr && !got.Equal(c.want) {
+			t.Errorf("parseSince(%q): got %v, want %v", c.in, got, c.want)
+		}
+	}
+}
