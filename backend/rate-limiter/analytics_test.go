@@ -22,10 +22,22 @@ type fakeStore struct {
 	tsPoints []TimeseriesPoint
 	tsErr    error
 
+	summaryByAlgoRet []SummaryByAlgoRow
+	summaryByAlgoErr error
+
+	tsByAlgoPoints []TimeseriesAlgoPoint
+	tsByAlgoErr    error
+
+	leaderboardRet []LeaderboardRow
+	leaderboardErr error
+
 	// Captured inputs from the last call (for parameter-validation assertions).
-	gotSummaryKey string
-	gotTSKey      string
-	gotTSSince    time.Time
+	gotSummaryKey        string
+	gotTSKey             string
+	gotTSSince           time.Time
+	gotSummaryByAlgoKey  string
+	gotTSByAlgoKey       string
+	gotTSByAlgoSince     time.Time
 }
 
 func (f *fakeStore) ListKeys(ctx context.Context) ([]string, error) {
@@ -39,6 +51,18 @@ func (f *fakeStore) Timeseries(ctx context.Context, key string, since time.Time)
 	f.gotTSKey = key
 	f.gotTSSince = since
 	return f.tsPoints, f.tsErr
+}
+func (f *fakeStore) SummaryByAlgorithm(ctx context.Context, key string) ([]SummaryByAlgoRow, error) {
+	f.gotSummaryByAlgoKey = key
+	return f.summaryByAlgoRet, f.summaryByAlgoErr
+}
+func (f *fakeStore) TimeseriesByAlgorithm(ctx context.Context, key string, since time.Time) ([]TimeseriesAlgoPoint, error) {
+	f.gotTSByAlgoKey = key
+	f.gotTSByAlgoSince = since
+	return f.tsByAlgoPoints, f.tsByAlgoErr
+}
+func (f *fakeStore) Leaderboard(ctx context.Context) ([]LeaderboardRow, error) {
+	return f.leaderboardRet, f.leaderboardErr
 }
 
 // ----- /analytics/keys -----
@@ -307,6 +331,7 @@ func TestCheckUnchangedByAnalyticsWiring(t *testing.T) {
 	mux.HandleFunc("/analytics/keys", AnalyticsKeysHandler(nil))
 	mux.HandleFunc("/analytics/summary", AnalyticsSummaryHandler(nil))
 	mux.HandleFunc("/analytics/timeseries", AnalyticsTimeseriesHandler(nil))
+	mux.HandleFunc("/analytics/leaderboard", AnalyticsLeaderboardHandler(nil))
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -340,6 +365,295 @@ func TestCheckUnchangedByAnalyticsWiring(t *testing.T) {
 	r.Body.Close()
 	if r.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("/analytics/keys with nil store status=%d, want 503", r.StatusCode)
+	}
+
+	// Same for leaderboard: nil store on the mux → 503.
+	r, err = http.Get(srv.URL + "/analytics/leaderboard")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Body.Close()
+	if r.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("/analytics/leaderboard with nil store status=%d, want 503", r.StatusCode)
+	}
+}
+
+// ----- group_by=algorithm branches -----
+
+// Default (no group_by) must keep the Day 7/8 shape: top-level allowed,
+// rejected, total, rejection_rate — no by_algorithm field. This is the
+// invariant the Day 8 dashboard relies on.
+func TestAnalyticsSummary_DefaultShapeUnchanged(t *testing.T) {
+	store := &fakeStore{summaryRet: SummaryRow{Allowed: 7, Rejected: 3, Total: 10}}
+	srv := httptest.NewServer(AnalyticsSummaryHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?key=alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := body["by_algorithm"]; present {
+		t.Error("default response must not include by_algorithm")
+	}
+	if body["allowed"].(float64) != 7 || body["rejected"].(float64) != 3 || body["total"].(float64) != 10 {
+		t.Errorf("default shape regressed: %v", body)
+	}
+}
+
+func TestAnalyticsSummary_GroupByAlgorithm(t *testing.T) {
+	store := &fakeStore{summaryByAlgoRet: []SummaryByAlgoRow{
+		{Algorithm: "fixed", Allowed: 40, Rejected: 10, Total: 50},
+		{Algorithm: "sliding", Allowed: 18, Rejected: 2, Total: 20},
+		{Algorithm: "token", Allowed: 0, Rejected: 0, Total: 0},
+	}}
+	srv := httptest.NewServer(AnalyticsSummaryHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?key=alice&group_by=algorithm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want 200", resp.StatusCode)
+	}
+	var body struct {
+		Key         string `json:"key"`
+		ByAlgorithm []struct {
+			Algorithm     string  `json:"algorithm"`
+			Allowed       int64   `json:"allowed"`
+			Rejected      int64   `json:"rejected"`
+			Total         int64   `json:"total"`
+			RejectionRate float64 `json:"rejection_rate"`
+		} `json:"by_algorithm"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Key != "alice" {
+		t.Errorf("key=%q, want alice", body.Key)
+	}
+	if len(body.ByAlgorithm) != 3 {
+		t.Fatalf("by_algorithm len=%d, want 3", len(body.ByAlgorithm))
+	}
+	if body.ByAlgorithm[0].Algorithm != "fixed" || body.ByAlgorithm[0].Total != 50 {
+		t.Errorf("first row=%+v", body.ByAlgorithm[0])
+	}
+	if r := body.ByAlgorithm[0].RejectionRate; r < 0.199 || r > 0.201 {
+		t.Errorf("fixed rejection_rate=%v, want ~0.2", r)
+	}
+	// Zero-total algorithm must report rate 0, not NaN.
+	if body.ByAlgorithm[2].RejectionRate != 0 {
+		t.Errorf("zero-total rejection_rate=%v, want 0", body.ByAlgorithm[2].RejectionRate)
+	}
+	if store.gotSummaryByAlgoKey != "alice" {
+		t.Errorf("store got key=%q", store.gotSummaryByAlgoKey)
+	}
+}
+
+func TestAnalyticsSummary_GroupByGarbage400(t *testing.T) {
+	store := &fakeStore{}
+	srv := httptest.NewServer(AnalyticsSummaryHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?key=alice&group_by=key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400", resp.StatusCode)
+	}
+}
+
+// Default timeseries (no group_by) must keep the Day 7/8 shape: points without
+// the `algorithm` field. The Day 8 chart depends on this.
+func TestAnalyticsTimeseries_DefaultShapeUnchanged(t *testing.T) {
+	bucket := time.Date(2026, 6, 6, 21, 15, 0, 0, time.UTC)
+	store := &fakeStore{tsPoints: []TimeseriesPoint{
+		{BucketStart: bucket, Allowed: 3, Rejected: 2, Total: 5},
+	}}
+	srv := httptest.NewServer(AnalyticsTimeseriesHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?key=alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	points, ok := body["points"].([]any)
+	if !ok || len(points) != 1 {
+		t.Fatalf("points=%v", body["points"])
+	}
+	first := points[0].(map[string]any)
+	if _, present := first["algorithm"]; present {
+		t.Error("default timeseries row must not include algorithm field")
+	}
+}
+
+func TestAnalyticsTimeseries_GroupByAlgorithm(t *testing.T) {
+	bucket := time.Date(2026, 6, 6, 21, 15, 0, 0, time.UTC)
+	store := &fakeStore{tsByAlgoPoints: []TimeseriesAlgoPoint{
+		{BucketStart: bucket, Algorithm: "fixed", Allowed: 4, Rejected: 1, Total: 5},
+		{BucketStart: bucket, Algorithm: "sliding", Allowed: 2, Rejected: 0, Total: 2},
+	}}
+	srv := httptest.NewServer(AnalyticsTimeseriesHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?key=alice&group_by=algorithm&since=30m")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want 200", resp.StatusCode)
+	}
+	var body struct {
+		Key    string                `json:"key"`
+		Points []TimeseriesAlgoPoint `json:"points"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Points) != 2 {
+		t.Fatalf("points len=%d, want 2", len(body.Points))
+	}
+	if body.Points[0].Algorithm != "fixed" || body.Points[0].Total != 5 {
+		t.Errorf("first=%+v", body.Points[0])
+	}
+	if body.Points[1].Algorithm != "sliding" {
+		t.Errorf("second=%+v", body.Points[1])
+	}
+	if store.gotTSByAlgoKey != "alice" {
+		t.Errorf("store got key=%q", store.gotTSByAlgoKey)
+	}
+}
+
+func TestAnalyticsTimeseries_GroupByGarbage400(t *testing.T) {
+	store := &fakeStore{}
+	srv := httptest.NewServer(AnalyticsTimeseriesHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?key=alice&group_by=key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400", resp.StatusCode)
+	}
+}
+
+// ----- /analytics/leaderboard -----
+
+func TestAnalyticsLeaderboard(t *testing.T) {
+	store := &fakeStore{leaderboardRet: []LeaderboardRow{
+		{Key: "bob", Allowed: 800, Rejected: 200, Total: 1000},
+		{Key: "alice", Allowed: 70, Rejected: 30, Total: 100},
+		{Key: "ghost", Allowed: 0, Rejected: 0, Total: 0},
+	}}
+	srv := httptest.NewServer(AnalyticsLeaderboardHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want 200", resp.StatusCode)
+	}
+	var body struct {
+		Rows []struct {
+			Key           string  `json:"key"`
+			Allowed       int64   `json:"allowed"`
+			Rejected      int64   `json:"rejected"`
+			Total         int64   `json:"total"`
+			RejectionRate float64 `json:"rejection_rate"`
+		} `json:"rows"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Rows) != 3 {
+		t.Fatalf("rows len=%d, want 3", len(body.Rows))
+	}
+	// Order is preserved from the store (which is supposed to order by total
+	// desc); handler must not re-sort.
+	if body.Rows[0].Key != "bob" || body.Rows[0].Total != 1000 {
+		t.Errorf("first row=%+v", body.Rows[0])
+	}
+	if r := body.Rows[0].RejectionRate; r < 0.199 || r > 0.201 {
+		t.Errorf("bob rejection_rate=%v, want ~0.2", r)
+	}
+	// Zero-total → rate 0, never NaN (which would not survive JSON encoding).
+	if body.Rows[2].RejectionRate != 0 {
+		t.Errorf("ghost rejection_rate=%v, want 0", body.Rows[2].RejectionRate)
+	}
+}
+
+func TestAnalyticsLeaderboard_Empty(t *testing.T) {
+	store := &fakeStore{leaderboardRet: []LeaderboardRow{}}
+	srv := httptest.NewServer(AnalyticsLeaderboardHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want 200", resp.StatusCode)
+	}
+	var body struct {
+		Rows []map[string]any `json:"rows"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Rows == nil {
+		t.Error("rows must be an empty array, not null")
+	}
+	if len(body.Rows) != 0 {
+		t.Errorf("rows len=%d, want 0", len(body.Rows))
+	}
+}
+
+func TestAnalyticsLeaderboard_NilStore503(t *testing.T) {
+	srv := httptest.NewServer(AnalyticsLeaderboardHandler(nil))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status=%d, want 503", resp.StatusCode)
+	}
+}
+
+func TestAnalyticsLeaderboard_StoreError503(t *testing.T) {
+	store := &fakeStore{leaderboardErr: errors.New("db gone")}
+	srv := httptest.NewServer(AnalyticsLeaderboardHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status=%d, want 503", resp.StatusCode)
 	}
 }
 

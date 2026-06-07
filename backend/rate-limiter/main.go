@@ -65,6 +65,7 @@ func main() {
 	mux.Handle("/analytics/keys", cors(AnalyticsKeysHandler(store)))
 	mux.Handle("/analytics/summary", cors(AnalyticsSummaryHandler(store)))
 	mux.Handle("/analytics/timeseries", cors(AnalyticsTimeseriesHandler(store)))
+	mux.Handle("/analytics/leaderboard", cors(AnalyticsLeaderboardHandler(store)))
 
 	srv := &http.Server{
 		Addr:         ":" + port,

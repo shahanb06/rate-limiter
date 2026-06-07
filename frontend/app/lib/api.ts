@@ -29,6 +29,29 @@ export type TimeseriesResp = {
   points: TimeseriesPoint[];
 };
 
+export type SummaryByAlgoRow = {
+  algorithm: string;
+  allowed: number;
+  rejected: number;
+  total: number;
+  rejection_rate: number;
+};
+
+export type SummaryByAlgoResp = {
+  key: string;
+  by_algorithm: SummaryByAlgoRow[];
+};
+
+export type LeaderboardRow = {
+  key: string;
+  allowed: number;
+  rejected: number;
+  total: number;
+  rejection_rate: number;
+};
+
+export type LeaderboardResp = { rows: LeaderboardRow[] };
+
 async function getJSON<T>(path: string, signal?: AbortSignal): Promise<Result<T>> {
   try {
     const res = await fetch(`${BASE}${path}`, { signal, cache: "no-store" });
@@ -54,5 +77,14 @@ export const getTimeseries = (key: string, since: string, signal?: AbortSignal) 
     `/analytics/timeseries?key=${encodeURIComponent(key)}&since=${encodeURIComponent(since)}`,
     signal,
   );
+
+export const getSummaryByAlgorithm = (key: string, signal?: AbortSignal) =>
+  getJSON<SummaryByAlgoResp>(
+    `/analytics/summary?key=${encodeURIComponent(key)}&group_by=algorithm`,
+    signal,
+  );
+
+export const getLeaderboard = (signal?: AbortSignal) =>
+  getJSON<LeaderboardResp>(`/analytics/leaderboard`, signal);
 
 export const API_BASE_URL = BASE;
