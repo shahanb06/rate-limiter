@@ -23,6 +23,8 @@ from pathlib import Path
 import psycopg
 import redis
 
+import alerts
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
@@ -44,6 +46,26 @@ AGG_INTERVAL_S = int(os.environ.get("AGG_INTERVAL_S", "15"))
 AGG_LOOKBACK_S = int(os.environ.get("AGG_LOOKBACK_S", "300"))      # 5 min overlap
 AGG_COLD_START_S = int(os.environ.get("AGG_COLD_START_S", "3600")) # 1 hour on empty table
 SCHEMA_PATH = Path(os.environ.get("SCHEMA_PATH", "schema.sql"))
+
+# Webhook alerting. Feature-flagged via WEBHOOK_URL — when unset, alerting is
+# fully disabled (alert_pass becomes a no-op, and we log the disabled state
+# exactly once at startup). WEBHOOK_URL is treated as a secret: env-only,
+# never logged in full.
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "").strip()
+ALERT_REJECTION_THRESHOLD = float(os.environ.get("ALERT_REJECTION_THRESHOLD", "0.5"))
+ALERT_MIN_VOLUME = int(os.environ.get("ALERT_MIN_VOLUME", "20"))
+ALERT_COOLDOWN_SECONDS = int(os.environ.get("ALERT_COOLDOWN_SECONDS", "300"))
+ALERT_WINDOW_MINUTES = 5  # configurable later via env if v1 hardcoding stops fitting
+
+# Module-level webhook delivery counter (success path increments nothing,
+# failure path bumps this so it can be exposed via logs or future /health).
+webhook_failures = 0
+
+# In-memory alert state keyed by tenant key. Single-threaded access from the
+# aggregator thread only — no lock needed. State resets on worker restart:
+# a key that is still breaching at cold start may re-fire once; cooldown
+# bounds that to a single alert per cooldown window.
+_alert_state: dict[str, dict] = {}
 
 _stop = False
 
@@ -148,6 +170,57 @@ RETURNING bucket_start
 """
 
 
+def fetch_alert_window(
+    conn: psycopg.Connection,
+    now: datetime | None = None,
+) -> list[tuple[str, int, int]]:
+    """Sum (total, rejected) per key over the last ALERT_WINDOW_MINUTES from
+    aggregated_metrics. Read-only, parameterized, never recomputes rates.
+    Returns (key, total, rejected) per key."""
+    if now is None:
+        now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=ALERT_WINDOW_MINUTES)
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT key, "
+            "  COALESCE(SUM(total), 0)::bigint, "
+            "  COALESCE(SUM(rejected_count), 0)::bigint "
+            "FROM aggregated_metrics "
+            "WHERE bucket_start >= %s "
+            "GROUP BY key",
+            (cutoff,),
+        )
+        return [(row[0], int(row[1]), int(row[2])) for row in cur.fetchall()]
+
+
+def alert_pass(conn: psycopg.Connection) -> None:
+    """Evaluate webhook alerts once. No-op when WEBHOOK_URL is unset.
+    Failures must never propagate — the caller wraps this in try/except too,
+    but defense in depth: anything raised here would still be caught."""
+    global webhook_failures
+    url = WEBHOOK_URL
+    if not url:
+        return
+    rows = fetch_alert_window(conn)
+    payloads = alerts.evaluate_alerts(
+        rows,
+        now=time.time(),
+        alert_state=_alert_state,
+        threshold=ALERT_REJECTION_THRESHOLD,
+        min_volume=ALERT_MIN_VOLUME,
+        cooldown_s=ALERT_COOLDOWN_SECONDS,
+        window_minutes=ALERT_WINDOW_MINUTES,
+    )
+    for p in payloads:
+        if alerts.send_webhook(url, p):
+            log.info(
+                "alert fired key=%s rate=%.3f total=%d",
+                p["key"], p["rejection_rate"], p["total"],
+            )
+        else:
+            webhook_failures += 1
+
+
 class Aggregator(threading.Thread):
     """Periodic per-minute rollup of raw_events into aggregated_metrics.
 
@@ -195,8 +268,10 @@ class Aggregator(threading.Thread):
             log.info("aggregator started watermark=%s", self._last_bucket.isoformat())
 
             while not _stop:
+                pass_ok = False
                 try:
                     n = self._run_pass(conn)
+                    pass_ok = True
                     log.info(
                         "aggregator pass buckets=%d watermark=%s",
                         n, self._last_bucket.isoformat(),
@@ -204,6 +279,15 @@ class Aggregator(threading.Thread):
                 except Exception as e:  # noqa: BLE001
                     log.error("aggregator pass failed: %s", e)
                     conn.rollback()
+
+                # Alert evaluation runs only on a clean pass; isolated so any
+                # failure (DB hiccup, slow webhook, bad URL) cannot affect the
+                # aggregator's commit/rollback semantics or the consumer XACK.
+                if pass_ok:
+                    try:
+                        alert_pass(conn)
+                    except Exception as e:  # noqa: BLE001
+                        log.warning("alert pass failed: %s", type(e).__name__)
 
                 # Sleep AGG_INTERVAL_S in 0.5s slices so SIGTERM exits promptly.
                 slept = 0.0
@@ -220,6 +304,15 @@ def main() -> int:
     signal.signal(signal.SIGINT, _handle_signal)
 
     log.info("starting worker stream=%s group=%s consumer=%s", STREAM, GROUP, CONSUMER)
+    if WEBHOOK_URL:
+        # NOTE: never log the URL itself — it's a secret.
+        log.info(
+            "alerting enabled threshold=%.2f min_volume=%d cooldown_s=%d window_m=%d",
+            ALERT_REJECTION_THRESHOLD, ALERT_MIN_VOLUME,
+            ALERT_COOLDOWN_SECONDS, ALERT_WINDOW_MINUTES,
+        )
+    else:
+        log.info("alerting disabled (WEBHOOK_URL unset)")
 
     r = connect_redis()
     conn = connect_postgres()
