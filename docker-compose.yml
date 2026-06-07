@@ -55,6 +55,10 @@ services:
       STREAM: rl:events
       GROUP: rl-workers
       CONSUMER: worker-1
+      WEBHOOK_URL: ${WEBHOOK_URL:-}
+      ALERT_REJECTION_THRESHOLD: ${ALERT_REJECTION_THRESHOLD:-0.5}
+      ALERT_MIN_VOLUME: ${ALERT_MIN_VOLUME:-20}
+      ALERT_COOLDOWN_SECONDS: ${ALERT_COOLDOWN_SECONDS:-300}
     depends_on:
       redis:
         condition: service_healthy
