@@ -10,7 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import type { TimeseriesPoint } from "../lib/api";
-import { formatTime } from "../lib/format";
+import { rejectionRateSeries } from "../lib/format";
 
 type Props = { points: TimeseriesPoint[] };
 
@@ -23,12 +23,7 @@ export default function RejectionRateChart({ points }: Props) {
     );
   }
 
-  // Empty buckets (total = 0) get rate = 0, not NaN. NaN does not survive
-  // recharts' axis/Tooltip computations cleanly.
-  const data = points.map((p) => ({
-    t: formatTime(p.bucket_start),
-    rate: p.total > 0 ? p.rejected / p.total : 0,
-  }));
+  const data = rejectionRateSeries(points);
 
   return (
     <div className="h-64 rounded-lg border border-slate-800 bg-slate-900/60 p-3">
