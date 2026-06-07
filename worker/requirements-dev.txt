@@ -1,0 +1,7 @@
+# Test/dev-only dependencies. Not shipped with the worker image.
+#   - pulls in the runtime deps (psycopg, redis) since the tests import
+#     worker.py which imports them at module load.
+#   - adds testcontainers for spinning up a throwaway Postgres so the
+#     aggregator UPSERT semantics are exercised against real Postgres.
+-r requirements.txt
+testcontainers[postgres]>=4.0,<5.0
