@@ -31,13 +31,17 @@ type fakeStore struct {
 	leaderboardRet []LeaderboardRow
 	leaderboardErr error
 
+	recentBucketsRet map[string][]LeaderboardSparklinePoint
+	recentBucketsErr error
+
 	// Captured inputs from the last call (for parameter-validation assertions).
-	gotSummaryKey        string
-	gotTSKey             string
-	gotTSSince           time.Time
-	gotSummaryByAlgoKey  string
-	gotTSByAlgoKey       string
-	gotTSByAlgoSince     time.Time
+	gotSummaryKey         string
+	gotTSKey              string
+	gotTSSince            time.Time
+	gotSummaryByAlgoKey   string
+	gotTSByAlgoKey        string
+	gotTSByAlgoSince      time.Time
+	gotRecentBucketsSince time.Time
 }
 
 func (f *fakeStore) ListKeys(ctx context.Context) ([]string, error) {
@@ -63,6 +67,10 @@ func (f *fakeStore) TimeseriesByAlgorithm(ctx context.Context, key string, since
 }
 func (f *fakeStore) Leaderboard(ctx context.Context) ([]LeaderboardRow, error) {
 	return f.leaderboardRet, f.leaderboardErr
+}
+func (f *fakeStore) RecentBucketsByKey(ctx context.Context, since time.Time) (map[string][]LeaderboardSparklinePoint, error) {
+	f.gotRecentBucketsSince = since
+	return f.recentBucketsRet, f.recentBucketsErr
 }
 
 // ----- /analytics/keys -----
@@ -654,6 +662,65 @@ func TestAnalyticsLeaderboard_StoreError503(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("status=%d, want 503", resp.StatusCode)
+	}
+}
+
+func TestAnalyticsLeaderboard_EmbedsSparklines(t *testing.T) {
+	store := &fakeStore{
+		leaderboardRet: []LeaderboardRow{
+			{Key: "alice", Allowed: 70, Rejected: 30, Total: 100},
+			{Key: "bob", Allowed: 800, Rejected: 200, Total: 1000},
+		},
+		recentBucketsRet: map[string][]LeaderboardSparklinePoint{
+			"alice": {
+				{Allowed: 10, Rejected: 0, Total: 10},
+				{Allowed: 15, Rejected: 5, Total: 20},
+			},
+			// bob has no recent buckets — handler should encode it as null.
+		},
+	}
+	srv := httptest.NewServer(AnalyticsLeaderboardHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want 200", resp.StatusCode)
+	}
+	var body struct {
+		Rows []struct {
+			Key       string                      `json:"key"`
+			Sparkline []LeaderboardSparklinePoint `json:"sparkline"`
+		} `json:"rows"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	byKey := map[string][]LeaderboardSparklinePoint{}
+	for _, r := range body.Rows {
+		byKey[r.Key] = r.Sparkline
+	}
+	alice, ok := byKey["alice"]
+	if !ok {
+		t.Fatalf("missing alice row: %+v", body.Rows)
+	}
+	if len(alice) != 2 {
+		t.Fatalf("alice sparkline len=%d, want 2", len(alice))
+	}
+	if alice[1].Total != 20 || alice[1].Allowed != 15 || alice[1].Rejected != 5 {
+		t.Errorf("alice sparkline[1]=%+v, want {15 5 20}", alice[1])
+	}
+	if bob, ok := byKey["bob"]; !ok || bob != nil {
+		t.Errorf("bob sparkline=%v, want nil (key missing from sparkline map)", bob)
+	}
+
+	// Handler must request roughly the last hour. Allow slop for test latency.
+	ago := time.Since(store.gotRecentBucketsSince)
+	if ago < 50*time.Minute || ago > 70*time.Minute {
+		t.Errorf("RecentBucketsByKey since=%v (now-%v), want ~now-1h", store.gotRecentBucketsSince, ago)
 	}
 }
 

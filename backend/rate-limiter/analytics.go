@@ -20,6 +20,7 @@ type AnalyticsStore interface {
 	SummaryByAlgorithm(ctx context.Context, key string) ([]SummaryByAlgoRow, error)
 	TimeseriesByAlgorithm(ctx context.Context, key string, since time.Time) ([]TimeseriesAlgoPoint, error)
 	Leaderboard(ctx context.Context) ([]LeaderboardRow, error)
+	RecentBucketsByKey(ctx context.Context, since time.Time) (map[string][]LeaderboardSparklinePoint, error)
 }
 
 type SummaryRow struct {
@@ -55,6 +56,12 @@ type LeaderboardRow struct {
 	Allowed  int64  `json:"allowed"`
 	Rejected int64  `json:"rejected"`
 	Total    int64  `json:"total"`
+}
+
+type LeaderboardSparklinePoint struct {
+	Allowed  int64 `json:"allowed"`
+	Rejected int64 `json:"rejected"`
+	Total    int64 `json:"total"`
 }
 
 // pgStore is the pgxpool-backed AnalyticsStore. Queries are parameterized; no
@@ -194,6 +201,37 @@ func (s *pgStore) Leaderboard(ctx context.Context) ([]LeaderboardRow, error) {
 			return nil, err
 		}
 		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *pgStore) RecentBucketsByKey(ctx context.Context, since time.Time) (map[string][]LeaderboardSparklinePoint, error) {
+	// Existing index (key, bucket_start DESC) isn't optimal here since we
+	// filter on bucket_start; at current scale (low row count) this is fine.
+	rows, err := s.pool.Query(ctx, `
+		SELECT key, bucket_start,
+		  COALESCE(SUM(allowed_count),  0)::bigint,
+		  COALESCE(SUM(rejected_count), 0)::bigint,
+		  COALESCE(SUM(total),          0)::bigint
+		FROM aggregated_metrics
+		WHERE bucket_start >= $1
+		GROUP BY key, bucket_start
+		ORDER BY key, bucket_start
+	`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string][]LeaderboardSparklinePoint{}
+	for rows.Next() {
+		var key string
+		var bucketStart time.Time
+		var p LeaderboardSparklinePoint
+		if err := rows.Scan(&key, &bucketStart, &p.Allowed, &p.Rejected, &p.Total); err != nil {
+			return nil, err
+		}
+		out[key] = append(out[key], p)
 	}
 	return out, rows.Err()
 }
@@ -383,6 +421,13 @@ func AnalyticsLeaderboardHandler(store AnalyticsStore) http.HandlerFunc {
 			writeError(w, http.StatusServiceUnavailable, "analytics unavailable")
 			return
 		}
+		since := time.Now().Add(-1 * time.Hour)
+		sparklines, err := store.RecentBucketsByKey(r.Context(), since)
+		if err != nil {
+			slog.ErrorContext(r.Context(), "analytics leaderboard sparklines", "err", err.Error())
+			writeError(w, http.StatusServiceUnavailable, "analytics unavailable")
+			return
+		}
 		out := make([]map[string]any, 0, len(rows))
 		for _, row := range rows {
 			var rate float64
@@ -395,6 +440,7 @@ func AnalyticsLeaderboardHandler(store AnalyticsStore) http.HandlerFunc {
 				"rejected":       row.Rejected,
 				"total":          row.Total,
 				"rejection_rate": rate,
+				"sparkline":      sparklines[row.Key],
 			})
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"rows": out})
