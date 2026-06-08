@@ -40,6 +40,8 @@ When the limit is exceeded, `allowed` flips to `false` and `retry_after` reports
 - `limit` — requests allowed per window
 - `window` — window length in seconds
 
+> **Note:** the `key` is a public bucketing identifier — it appears on the analytics dashboard. Use a stable, non-sensitive value (a user ID, API-key ID, or IP). Don't pass raw secrets or personal data as the key.
+
 **See it trip** — the first `limit` requests are allowed, the rest are rejected for the rest of the window:
 
 ```bash
