@@ -108,9 +108,13 @@ func (s *pgStore) Summary(ctx context.Context, key string) (SummaryRow, error) {
 
 func (s *pgStore) Timeseries(ctx context.Context, key string, since time.Time) ([]TimeseriesPoint, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT bucket_start, allowed_count, rejected_count, total
+		SELECT bucket_start,
+		  COALESCE(SUM(allowed_count),  0)::bigint,
+		  COALESCE(SUM(rejected_count), 0)::bigint,
+		  COALESCE(SUM(total),          0)::bigint
 		FROM aggregated_metrics
 		WHERE key = $1 AND bucket_start >= $2
+		GROUP BY bucket_start
 		ORDER BY bucket_start
 	`, key, since)
 	if err != nil {
