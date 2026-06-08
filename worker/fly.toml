@@ -1,0 +1,14 @@
+# fly.toml app configuration file generated for rate-limiter-worker-shahanb06 on 2026-06-07T18:08:33-04:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'rate-limiter-worker-shahanb06'
+primary_region = 'iad'
+
+[build]
+
+[[vm]]
+  memory = '256mb'
+  cpus = 1
+  memory_mb = 256
