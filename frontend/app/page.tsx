@@ -160,7 +160,7 @@ export default function Dashboard() {
 
       {selected && (
         <>
-          <SummaryCard summary={summary} />
+          <SummaryCard summary={summary} points={points} />
           <AlgorithmBreakdown rows={byAlgo} />
           <TimeseriesChart points={points} />
           <RejectionRateChart points={points} />

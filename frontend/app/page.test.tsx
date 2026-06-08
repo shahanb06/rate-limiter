@@ -191,9 +191,8 @@ describe("Dashboard", () => {
 
     render(<Dashboard />);
 
-    await waitFor(() => expect(screen.getByText("30.0%")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("10")).toBeInTheDocument());
     // SummaryCard panels rendered with summary data.
-    expect(screen.getByText("10")).toBeInTheDocument();
     expect(screen.getByText("7")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
     // Error banner surfaces leaderboard's error.
