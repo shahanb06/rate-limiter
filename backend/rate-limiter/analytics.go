@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -359,7 +359,7 @@ func AnalyticsTimeseriesHandler(store AnalyticsStore) http.HandlerFunc {
 			return
 		}
 
-		since, err := parseSince(r.URL.Query().Get("since"), time.Now())
+		since, err := parseSince(r.URL.Query().Get("since"), time.Now(), "since")
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -421,7 +421,11 @@ func AnalyticsLeaderboardHandler(store AnalyticsStore) http.HandlerFunc {
 			writeError(w, http.StatusServiceUnavailable, "analytics unavailable")
 			return
 		}
-		since := time.Now().Add(-1 * time.Hour)
+		since, err := parseSince(r.URL.Query().Get("window"), time.Now(), "window")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		sparklines, err := store.RecentBucketsByKey(r.Context(), since)
 		if err != nil {
 			slog.ErrorContext(r.Context(), "analytics leaderboard sparklines", "err", err.Error())
@@ -448,8 +452,9 @@ func AnalyticsLeaderboardHandler(store AnalyticsStore) http.HandlerFunc {
 }
 
 // parseSince accepts a Go duration ("1h", "30m") relative to now, an RFC3339
-// timestamp, or empty (defaults to now-1h).
-func parseSince(raw string, now time.Time) (time.Time, error) {
+// timestamp, or empty (defaults to now-1h). paramName is used only in the
+// error message so callers binding to e.g. `?window=` get a coherent 400.
+func parseSince(raw string, now time.Time, paramName string) (time.Time, error) {
 	if raw == "" {
 		return now.Add(-1 * time.Hour), nil
 	}
@@ -462,5 +467,5 @@ func parseSince(raw string, now time.Time) (time.Time, error) {
 	if t, err := time.Parse(time.RFC3339, raw); err == nil {
 		return t, nil
 	}
-	return time.Time{}, errors.New("since must be a Go duration (e.g. '1h') or RFC3339 timestamp")
+	return time.Time{}, fmt.Errorf("%s must be a Go duration (e.g. '1h') or RFC3339 timestamp", paramName)
 }

@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -724,6 +726,47 @@ func TestAnalyticsLeaderboard_EmbedsSparklines(t *testing.T) {
 	}
 }
 
+func TestAnalyticsLeaderboard_WindowParam(t *testing.T) {
+	// Explicit window=24h widens the sparkline lookback to 24h.
+	store := &fakeStore{
+		leaderboardRet: []LeaderboardRow{{Key: "alice", Total: 1}},
+	}
+	srv := httptest.NewServer(AnalyticsLeaderboardHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?window=24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want 200", resp.StatusCode)
+	}
+	ago := time.Since(store.gotRecentBucketsSince)
+	if ago < 23*time.Hour+50*time.Minute || ago > 24*time.Hour+10*time.Minute {
+		t.Errorf("with window=24h, since=now-%v, want ~now-24h", ago)
+	}
+}
+
+func TestAnalyticsLeaderboard_InvalidWindow400(t *testing.T) {
+	store := &fakeStore{leaderboardRet: []LeaderboardRow{{Key: "alice", Total: 1}}}
+	srv := httptest.NewServer(AnalyticsLeaderboardHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?window=garbage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "window") {
+		t.Errorf("error body=%q, want it to mention the param name 'window'", string(body))
+	}
+}
+
 // ----- parseSince unit -----
 
 func TestParseSince(t *testing.T) {
@@ -742,7 +785,7 @@ func TestParseSince(t *testing.T) {
 		{"garbage", time.Time{}, true},
 	}
 	for _, c := range cases {
-		got, err := parseSince(c.in, now)
+		got, err := parseSince(c.in, now, "since")
 		if (err != nil) != c.wantErr {
 			t.Errorf("parseSince(%q): err=%v, wantErr=%v", c.in, err, c.wantErr)
 		}
