@@ -40,26 +40,40 @@ export default function AlgorithmBreakdown({ rows }: Props) {
   }));
 
   return (
-    <div className="h-64 rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+    <div className="h-64 rounded-lg border border-slate-800 bg-slate-900/60 p-4">
       <div className="px-1 pb-2 text-xs uppercase tracking-wide text-slate-500">
         Per-algorithm breakdown
       </div>
       <ResponsiveContainer width="100%" height="85%">
-        <BarChart data={data} margin={{ top: 5, right: 20, bottom: 0, left: 0 }}>
+        <BarChart
+          data={data}
+          margin={{ top: 5, right: 20, bottom: 0, left: 0 }}
+          barCategoryGap="20%"
+        >
           <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" />
-          <XAxis dataKey="algorithm" stroke="#64748b" fontSize={12} />
-          <YAxis stroke="#64748b" fontSize={12} allowDecimals={false} />
+          <XAxis
+            dataKey="algorithm"
+            tick={{ fill: "#64748b", fontSize: 11 }}
+            axisLine={{ stroke: "#1e293b" }}
+            tickLine={{ stroke: "#1e293b" }}
+          />
+          <YAxis
+            allowDecimals={false}
+            tick={{ fill: "#64748b", fontSize: 11 }}
+            axisLine={{ stroke: "#1e293b" }}
+            tickLine={{ stroke: "#1e293b" }}
+          />
           <Tooltip
             contentStyle={{
               background: "#0f172a",
-              border: "1px solid #334155",
+              border: "1px solid #1e293b",
               borderRadius: 6,
-              fontSize: 12,
+              color: "#e2e8f0",
             }}
           />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Bar dataKey="allowed" fill="#34d399" />
-          <Bar dataKey="rejected" fill="#fb7185" />
+          <Legend wrapperStyle={{ color: "#94a3b8", fontSize: 12 }} />
+          <Bar dataKey="allowed" fill="#22c55e" />
+          <Bar dataKey="rejected" fill="#f43f5e" />
         </BarChart>
       </ResponsiveContainer>
     </div>
