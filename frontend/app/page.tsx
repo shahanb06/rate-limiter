@@ -23,7 +23,7 @@ import {
 } from "./lib/api";
 
 const POLL_MS = 7000;
-const SINCE = "1h";
+const WINDOWS = ["5m", "1h", "6h", "24h"] as const;
 
 export default function Dashboard() {
   const [keys, setKeys] = useState<string[]>([]);
@@ -36,6 +36,7 @@ export default function Dashboard() {
   const [byAlgo, setByAlgo] = useState<SummaryByAlgoRow[] | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[] | null>(null);
   const [pollErr, setPollErr] = useState<string | null>(null);
+  const [windowSel, setWindowSel] = useState("24h");
 
   // One-shot: load the key list on mount.
   useEffect(() => {
@@ -65,9 +66,9 @@ export default function Dashboard() {
 
     const tick = async () => {
       const [lb, s, ts, alg] = await Promise.all([
-        getLeaderboard("24h"),
+        getLeaderboard(windowSel),
         selected ? getSummary(selected) : Promise.resolve(null),
-        selected ? getTimeseries(selected, SINCE) : Promise.resolve(null),
+        selected ? getTimeseries(selected, windowSel) : Promise.resolve(null),
         selected ? getSummaryByAlgorithm(selected) : Promise.resolve(null),
       ]);
       if (cancelled) return;
@@ -113,7 +114,7 @@ export default function Dashboard() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [selected]);
+  }, [selected, windowSel]);
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10 space-y-6">
@@ -121,8 +122,28 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl font-semibold">Rate Limiter Dashboard</h1>
           <p className="text-sm text-slate-500">
-            Live analytics · polling every {POLL_MS / 1000}s · window: last {SINCE}
+            Live analytics · polling every {POLL_MS / 1000}s · window: last {windowSel}
           </p>
+          <div className="mt-2 flex gap-1">
+            {WINDOWS.map((w) => {
+              const active = w === windowSel;
+              return (
+                <button
+                  key={w}
+                  type="button"
+                  onClick={() => setWindowSel(w)}
+                  className={
+                    "rounded-md px-2 py-0.5 text-xs font-medium transition-colors " +
+                    (active
+                      ? "bg-slate-700 text-slate-100"
+                      : "bg-slate-900 text-slate-500 hover:text-slate-300")
+                  }
+                >
+                  {w}
+                </button>
+              );
+            })}
+          </div>
         </div>
         <KeyPicker
           keys={keys}
