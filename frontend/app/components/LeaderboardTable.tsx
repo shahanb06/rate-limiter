@@ -1,5 +1,6 @@
 "use client";
 
+import { Line, LineChart } from "recharts";
 import type { LeaderboardRow } from "../lib/api";
 import { formatNumber, formatPct } from "../lib/format";
 
@@ -34,6 +35,7 @@ export default function LeaderboardTable({ rows, selected, onSelect }: Props) {
         <thead>
           <tr className="border-b border-slate-800 text-left text-xs uppercase tracking-wide text-slate-500">
             <th className="px-4 py-2 font-medium">Key</th>
+            <th className="px-4 py-2 font-medium text-left">Trend</th>
             <th className="px-4 py-2 font-medium text-right">Total</th>
             <th className="px-4 py-2 font-medium text-right">Allowed</th>
             <th className="px-4 py-2 font-medium text-right">Rejected</th>
@@ -55,6 +57,22 @@ export default function LeaderboardTable({ rows, selected, onSelect }: Props) {
                 }
               >
                 <td className="px-4 py-2 font-mono">{row.key}</td>
+                <td className="px-4 py-2">
+                  {row.sparkline && row.sparkline.length >= 2 ? (
+                    <LineChart width={80} height={24} data={row.sparkline}>
+                      <Line
+                        type="monotone"
+                        dataKey="total"
+                        stroke="#60a5fa"
+                        strokeWidth={1.5}
+                        dot={false}
+                        isAnimationActive={false}
+                      />
+                    </LineChart>
+                  ) : (
+                    <span className="text-slate-700">—</span>
+                  )}
+                </td>
                 <td className="px-4 py-2 text-right tabular-nums">
                   {formatNumber(row.total)}
                 </td>

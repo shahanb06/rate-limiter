@@ -42,12 +42,19 @@ export type SummaryByAlgoResp = {
   by_algorithm: SummaryByAlgoRow[];
 };
 
+export type LeaderboardSparklinePoint = {
+  allowed: number;
+  rejected: number;
+  total: number;
+};
+
 export type LeaderboardRow = {
   key: string;
   allowed: number;
   rejected: number;
   total: number;
   rejection_rate: number;
+  sparkline?: LeaderboardSparklinePoint[] | null;
 };
 
 export type LeaderboardResp = { rows: LeaderboardRow[] };
@@ -84,7 +91,10 @@ export const getSummaryByAlgorithm = (key: string, signal?: AbortSignal) =>
     signal,
   );
 
-export const getLeaderboard = (signal?: AbortSignal) =>
-  getJSON<LeaderboardResp>(`/analytics/leaderboard`, signal);
+export const getLeaderboard = (window?: string, signal?: AbortSignal) =>
+  getJSON<LeaderboardResp>(
+    window ? `/analytics/leaderboard?window=${encodeURIComponent(window)}` : `/analytics/leaderboard`,
+    signal,
+  );
 
 export const API_BASE_URL = BASE;
