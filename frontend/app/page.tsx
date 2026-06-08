@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import AlgorithmBreakdown from "./components/AlgorithmBreakdown";
 import KeyPicker from "./components/KeyPicker";
 import LeaderboardTable from "./components/LeaderboardTable";
+import RejectionGauge from "./components/RejectionGauge";
 import RejectionRateChart from "./components/RejectionRateChart";
 import StatusBanner from "./components/StatusBanner";
 import SummaryCard from "./components/SummaryCard";
@@ -161,6 +162,7 @@ export default function Dashboard() {
       {selected && (
         <>
           <SummaryCard summary={summary} points={points} />
+          <RejectionGauge summary={summary} />
           <AlgorithmBreakdown rows={byAlgo} />
           <TimeseriesChart points={points} />
           <RejectionRateChart points={points} />

@@ -23,6 +23,11 @@ vi.mock("./components/RejectionRateChart", () => ({
     <div data-testid="rej-chart">rej:{points.length}</div>
   ),
 }));
+vi.mock("./components/RejectionGauge", () => ({
+  default: ({ summary }: { summary: unknown }) => (
+    <div data-testid="rej-gauge">gauge:{summary ? "ok" : "null"}</div>
+  ),
+}));
 
 import * as api from "./lib/api";
 import Dashboard from "./page";
