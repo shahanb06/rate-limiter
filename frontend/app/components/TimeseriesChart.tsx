@@ -11,7 +11,7 @@ import {
   YAxis,
 } from "recharts";
 import type { TimeseriesPoint } from "../lib/api";
-import { formatTime } from "../lib/format";
+import { formatNumber, formatTime } from "../lib/format";
 
 type Props = { points: TimeseriesPoint[] };
 
@@ -30,9 +30,23 @@ export default function TimeseriesChart({ points }: Props) {
     rejected: p.rejected,
   }));
 
+  // min/avg/max of per-bucket total volume, shown in the header.
+  const totals = points.map((p) => p.allowed + p.rejected);
+  const min = Math.min(...totals);
+  const max = Math.max(...totals);
+  const avg = Math.round(totals.reduce((a, b) => a + b, 0) / totals.length);
+
   return (
     <div className="h-72 rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-      <ResponsiveContainer width="100%" height="100%">
+      <div className="flex items-baseline justify-between px-1 pb-2">
+        <span className="text-xs uppercase tracking-wide text-slate-500">
+          Requests over time
+        </span>
+        <span className="text-xs tabular-nums text-slate-500">
+          min {formatNumber(min)} · avg {formatNumber(avg)} · max {formatNumber(max)}
+        </span>
+      </div>
+      <ResponsiveContainer width="100%" height="85%">
         <AreaChart data={data} margin={{ top: 10, right: 20, bottom: 0, left: 0 }}>
           <defs>
             <linearGradient id="allowedFill" x1="0" y1="0" x2="0" y2="1">

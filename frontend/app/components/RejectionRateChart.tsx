@@ -10,7 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import type { TimeseriesPoint } from "../lib/api";
-import { rejectionRateSeries } from "../lib/format";
+import { formatPct, rejectionRateSeries } from "../lib/format";
 
 type Props = { points: TimeseriesPoint[] };
 
@@ -25,10 +25,21 @@ export default function RejectionRateChart({ points }: Props) {
 
   const data = rejectionRateSeries(points);
 
+  // min/avg/max of the rejection rate across buckets, shown in the header.
+  const rates = data.map((d) => d.rate);
+  const min = Math.min(...rates);
+  const max = Math.max(...rates);
+  const avg = rates.reduce((a, b) => a + b, 0) / rates.length;
+
   return (
     <div className="h-64 rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-      <div className="px-1 pb-2 text-xs uppercase tracking-wide text-slate-500">
-        Rejection rate over time
+      <div className="flex items-baseline justify-between px-1 pb-2">
+        <span className="text-xs uppercase tracking-wide text-slate-500">
+          Rejection rate over time
+        </span>
+        <span className="text-xs tabular-nums text-slate-500">
+          min {formatPct(min)} · avg {formatPct(avg)} · max {formatPct(max)}
+        </span>
       </div>
       <ResponsiveContainer width="100%" height="85%">
         <LineChart data={data} margin={{ top: 5, right: 20, bottom: 0, left: 0 }}>
