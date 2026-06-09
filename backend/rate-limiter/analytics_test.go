@@ -18,8 +18,10 @@ type fakeStore struct {
 	listKeysRet []string
 	listKeysErr error
 
-	summaryRet SummaryRow
-	summaryErr error
+	summaryRet     SummaryRow
+	summaryPrevRet SummaryRow
+	summaryErr     error
+	summaryCalls   int
 
 	tsPoints []TimeseriesPoint
 	tsErr    error
@@ -38,6 +40,8 @@ type fakeStore struct {
 
 	// Captured inputs from the last call (for parameter-validation assertions).
 	gotSummaryKey         string
+	gotSummarySince       time.Time
+	gotSummaryUntil       time.Time
 	gotTSKey              string
 	gotTSSince            time.Time
 	gotSummaryByAlgoKey   string
@@ -49,9 +53,15 @@ type fakeStore struct {
 func (f *fakeStore) ListKeys(ctx context.Context) ([]string, error) {
 	return f.listKeysRet, f.listKeysErr
 }
-func (f *fakeStore) Summary(ctx context.Context, key string) (SummaryRow, error) {
-	f.gotSummaryKey = key
-	return f.summaryRet, f.summaryErr
+func (f *fakeStore) Summary(ctx context.Context, key string, since, until time.Time) (SummaryRow, error) {
+	f.summaryCalls++
+	if f.summaryCalls == 1 {
+		f.gotSummaryKey = key
+		f.gotSummarySince = since
+		f.gotSummaryUntil = until
+		return f.summaryRet, f.summaryErr
+	}
+	return f.summaryPrevRet, f.summaryErr
 }
 func (f *fakeStore) Timeseries(ctx context.Context, key string, since time.Time) ([]TimeseriesPoint, error) {
 	f.gotTSKey = key
@@ -412,6 +422,77 @@ func TestAnalyticsSummary_DefaultShapeUnchanged(t *testing.T) {
 	}
 	if body["allowed"].(float64) != 7 || body["rejected"].(float64) != 3 || body["total"].(float64) != 10 {
 		t.Errorf("default shape regressed: %v", body)
+	}
+}
+
+func TestAnalyticsSummary_Delta(t *testing.T) {
+	store := &fakeStore{
+		summaryRet:     SummaryRow{Allowed: 30, Rejected: 90, Total: 120},
+		summaryPrevRet: SummaryRow{Allowed: 20, Rejected: 45, Total: 75},
+	}
+	srv := httptest.NewServer(AnalyticsSummaryHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?key=alice&window=1h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want 200", resp.StatusCode)
+	}
+	var body struct {
+		Total    int64 `json:"total"`
+		Previous struct {
+			Total int64 `json:"total"`
+		} `json:"previous"`
+		Delta struct {
+			TotalPct *float64 `json:"total_pct"`
+		} `json:"delta"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Total != 120 {
+		t.Errorf("top-level total=%d, want 120 (current window)", body.Total)
+	}
+	if body.Previous.Total != 75 {
+		t.Errorf("previous.total=%d, want 75", body.Previous.Total)
+	}
+	if body.Delta.TotalPct == nil {
+		t.Fatalf("delta.total_pct is nil, want ~60.0")
+	}
+	if d := *body.Delta.TotalPct; d < 59.95 || d > 60.05 {
+		t.Errorf("delta.total_pct=%v, want ~60.0", d)
+	}
+}
+
+func TestAnalyticsSummary_DeltaNullWhenNoPrevious(t *testing.T) {
+	store := &fakeStore{
+		summaryRet: SummaryRow{Allowed: 10, Rejected: 5, Total: 15},
+		// summaryPrevRet defaults to zero — no traffic in the previous window.
+	}
+	srv := httptest.NewServer(AnalyticsSummaryHandler(store))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?key=alice&window=1h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want 200", resp.StatusCode)
+	}
+	var body struct {
+		Delta struct {
+			TotalPct *float64 `json:"total_pct"`
+		} `json:"delta"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Delta.TotalPct != nil {
+		t.Errorf("delta.total_pct=%v, want nil when previous window had zero total", *body.Delta.TotalPct)
 	}
 }
 

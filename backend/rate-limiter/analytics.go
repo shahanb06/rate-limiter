@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 // Redis-only: the store is never reachable from CheckHandler.
 type AnalyticsStore interface {
 	ListKeys(ctx context.Context) ([]string, error)
-	Summary(ctx context.Context, key string) (SummaryRow, error)
+	Summary(ctx context.Context, key string, since, until time.Time) (SummaryRow, error)
 	Timeseries(ctx context.Context, key string, since time.Time) ([]TimeseriesPoint, error)
 	SummaryByAlgorithm(ctx context.Context, key string) ([]SummaryByAlgoRow, error)
 	TimeseriesByAlgorithm(ctx context.Context, key string, since time.Time) ([]TimeseriesAlgoPoint, error)
@@ -93,7 +94,7 @@ func (s *pgStore) ListKeys(ctx context.Context) ([]string, error) {
 	return keys, rows.Err()
 }
 
-func (s *pgStore) Summary(ctx context.Context, key string) (SummaryRow, error) {
+func (s *pgStore) Summary(ctx context.Context, key string, since, until time.Time) (SummaryRow, error) {
 	var r SummaryRow
 	err := s.pool.QueryRow(ctx, `
 		SELECT
@@ -101,8 +102,8 @@ func (s *pgStore) Summary(ctx context.Context, key string) (SummaryRow, error) {
 		  COALESCE(SUM(rejected_count), 0)::bigint,
 		  COALESCE(SUM(total),          0)::bigint
 		FROM aggregated_metrics
-		WHERE key = $1
-	`, key).Scan(&r.Allowed, &r.Rejected, &r.Total)
+		WHERE key = $1 AND bucket_start >= $2 AND bucket_start < $3
+	`, key, since, until).Scan(&r.Allowed, &r.Rejected, &r.Total)
 	return r, err
 }
 
@@ -319,24 +320,61 @@ func AnalyticsSummaryHandler(store AnalyticsStore) http.HandlerFunc {
 			return
 		}
 
-		row, err := store.Summary(r.Context(), key)
+		now := time.Now()
+		curStart, err := parseSince(r.URL.Query().Get("window"), now, "window")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		dur := now.Sub(curStart)
+		prevStart := curStart.Add(-dur)
+
+		cur, err := store.Summary(r.Context(), key, curStart, now)
 		if err != nil {
 			slog.ErrorContext(r.Context(), "analytics summary", "key", key, "err", err.Error())
 			writeError(w, http.StatusServiceUnavailable, "analytics unavailable")
 			return
 		}
+		prev, err := store.Summary(r.Context(), key, prevStart, curStart)
+		if err != nil {
+			slog.ErrorContext(r.Context(), "analytics summary previous", "key", key, "err", err.Error())
+			writeError(w, http.StatusServiceUnavailable, "analytics unavailable")
+			return
+		}
 		var rate float64
-		if row.Total > 0 {
-			rate = float64(row.Rejected) / float64(row.Total)
+		if cur.Total > 0 {
+			rate = float64(cur.Rejected) / float64(cur.Total)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"key":            key,
-			"allowed":        row.Allowed,
-			"rejected":       row.Rejected,
-			"total":          row.Total,
+			"allowed":        cur.Allowed,
+			"rejected":       cur.Rejected,
+			"total":          cur.Total,
 			"rejection_rate": rate,
+			"previous": map[string]any{
+				"allowed":  prev.Allowed,
+				"rejected": prev.Rejected,
+				"total":    prev.Total,
+			},
+			"delta": map[string]any{
+				"allowed_pct":  deltaPct(cur.Allowed, prev.Allowed),
+				"rejected_pct": deltaPct(cur.Rejected, prev.Rejected),
+				"total_pct":    deltaPct(cur.Total, prev.Total),
+			},
 		})
 	}
+}
+
+// deltaPct returns the percent change from prev to cur, rounded to 1 decimal.
+// Returns nil when prev is zero so the JSON encodes as null — there's no
+// meaningful percentage when the previous window had zero volume.
+func deltaPct(cur, prev int64) *float64 {
+	if prev == 0 {
+		return nil
+	}
+	v := (float64(cur-prev) / float64(prev)) * 100
+	v = math.Round(v*10) / 10
+	return &v
 }
 
 // AnalyticsTimeseriesHandler returns per-minute buckets for one key since a
