@@ -25,6 +25,14 @@ import {
 const POLL_MS = 7000;
 const WINDOWS = ["5m", "1h", "6h", "24h"] as const;
 
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <h2 className="text-sm font-semibold tracking-wide text-slate-400">
+      {children}
+    </h2>
+  );
+}
+
 export default function Dashboard() {
   const [keys, setKeys] = useState<string[]>([]);
   const [keysErr, setKeysErr] = useState<string | null>(null);
@@ -174,6 +182,7 @@ export default function Dashboard() {
         </StatusBanner>
       )}
 
+      <SectionLabel>Overview</SectionLabel>
       <LeaderboardTable
         rows={leaderboard}
         selected={selected}
@@ -182,9 +191,11 @@ export default function Dashboard() {
 
       {selected && (
         <>
+          <SectionLabel>Per-Key Drill-Down</SectionLabel>
           <SummaryCard summary={summary} points={points} />
           <RejectionGauge summary={summary} />
           <AlgorithmBreakdown rows={byAlgo} />
+          <SectionLabel>{`Activity · ${selected}`}</SectionLabel>
           <TimeseriesChart points={points} />
           <RejectionRateChart points={points} />
         </>
