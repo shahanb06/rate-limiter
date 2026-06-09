@@ -25,6 +25,28 @@ import {
 const POLL_MS = 7000;
 const WINDOWS = ["5m", "1h", "6h", "24h"] as const;
 
+function LiveStatus({ lastUpdated }: { lastUpdated: number | null }) {
+  const [now, setNow] = useState<number>(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <span className="flex items-center gap-2">
+      <span className="flex items-center gap-1.5">
+        <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+        Live
+      </span>
+      <span aria-hidden>·</span>
+      <span>
+        {lastUpdated
+          ? `updated ${Math.max(0, Math.round((now - lastUpdated) / 1000))}s ago`
+          : "connecting…"}
+      </span>
+    </span>
+  );
+}
+
 function SectionLabel({ children }: { children: string }) {
   return (
     <h2 className="text-sm font-semibold tracking-wide text-slate-400">
@@ -45,6 +67,8 @@ export default function Dashboard() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[] | null>(null);
   const [pollErr, setPollErr] = useState<string | null>(null);
   const [windowSel, setWindowSel] = useState("24h");
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   // One-shot: load the key list on mount.
   useEffect(() => {
@@ -106,6 +130,7 @@ export default function Dashboard() {
       }
 
       setPollErr(nextErr);
+      setLastUpdated(Date.now());
     };
 
     // On key-change, reset the per-key panels so the previous key's numbers
@@ -122,7 +147,7 @@ export default function Dashboard() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [selected, windowSel]);
+  }, [selected, windowSel, refreshNonce]);
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10 space-y-6">
@@ -130,7 +155,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl font-semibold">Rate Limiter Dashboard</h1>
           <p className="text-sm text-slate-500">
-            Live analytics · polling every {POLL_MS / 1000}s · window: last {windowSel}
+            Per-key rate-limit analytics · window: last {windowSel}
           </p>
           <div className="mt-2 flex gap-1">
             {WINDOWS.map((w) => {
@@ -151,6 +176,16 @@ export default function Dashboard() {
                 </button>
               );
             })}
+          </div>
+          <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+            <LiveStatus lastUpdated={lastUpdated} />
+            <button
+              type="button"
+              onClick={() => setRefreshNonce((n) => n + 1)}
+              className="rounded-md bg-slate-900 px-2 py-0.5 font-medium text-slate-400 transition-colors hover:text-slate-200"
+            >
+              Refresh
+            </button>
           </div>
         </div>
         <KeyPicker
