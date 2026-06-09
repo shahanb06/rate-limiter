@@ -203,6 +203,7 @@ func TestHandlerHealth(t *testing.T) {
 // ----- DAY 3: CONFIG ENDPOINTS -----
 
 func TestConfigPutThenGet_QueryParams(t *testing.T) {
+	t.Setenv("ENV", "dev")
 	srv := newTestServer(t)
 	c := srv.Client()
 
@@ -247,6 +248,7 @@ func TestConfigPutThenGet_QueryParams(t *testing.T) {
 }
 
 func TestConfigPut_JSONBody(t *testing.T) {
+	t.Setenv("ENV", "dev")
 	srv := newTestServer(t)
 	c := srv.Client()
 
@@ -276,6 +278,7 @@ func TestConfigPut_JSONBody(t *testing.T) {
 }
 
 func TestConfigOverridesCheckQueryParams(t *testing.T) {
+	t.Setenv("ENV", "dev")
 	srv := newTestServer(t)
 	c := srv.Client()
 
@@ -343,6 +346,7 @@ func TestConfigGet_NotFound(t *testing.T) {
 }
 
 func TestConfigPut_ValidationErrors(t *testing.T) {
+	t.Setenv("ENV", "dev")
 	srv := newTestServer(t)
 	c := srv.Client()
 

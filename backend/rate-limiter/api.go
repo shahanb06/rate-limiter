@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -236,6 +237,10 @@ func ConfigHandler(rdb *redis.Client) http.HandlerFunc {
 			writeJSON(w, http.StatusOK, cfg)
 
 		case http.MethodPut:
+			if os.Getenv("ENV") != "dev" {
+				writeError(w, http.StatusMethodNotAllowed, "config writes are disabled in production")
+				return
+			}
 			cfg, err := parseConfigInput(r)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
