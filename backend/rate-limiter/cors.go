@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log/slog"
 	"net/http"
 	"os"
 )
@@ -13,7 +14,12 @@ import (
 func NewCORS() func(http.Handler) http.Handler {
 	origin := os.Getenv("CORS_ALLOWED_ORIGIN")
 	if origin == "" {
-		origin = "*"
+		if os.Getenv("ENV") == "dev" {
+			origin = "*"
+		} else {
+			slog.Error("CORS_ALLOWED_ORIGIN is required outside dev; refusing to start")
+			os.Exit(1)
+		}
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

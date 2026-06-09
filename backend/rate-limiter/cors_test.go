@@ -10,6 +10,7 @@ import (
 // middleware adds the expected headers to GET responses.
 func TestCORSAppliedToAnalytics(t *testing.T) {
 	store := &fakeStore{listKeysRet: []string{"k1"}}
+	t.Setenv("ENV", "dev")
 	cors := NewCORS()
 	srv := httptest.NewServer(cors(AnalyticsKeysHandler(store)))
 	t.Cleanup(srv.Close)
@@ -31,6 +32,7 @@ func TestCORSAppliedToAnalytics(t *testing.T) {
 // TestCORSPreflight verifies that OPTIONS requests short-circuit with 204 and
 // carry the CORS headers (so the browser allows the follow-up GET).
 func TestCORSPreflight(t *testing.T) {
+	t.Setenv("ENV", "dev")
 	cors := NewCORS()
 	// Inner handler should never be called for OPTIONS.
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +64,7 @@ func TestCORSPreflight(t *testing.T) {
 // able to call it cross-origin.
 func TestCORSNotAppliedToCheck(t *testing.T) {
 	rdb, _ := newTestRedis(t)
+	t.Setenv("ENV", "dev")
 	cors := NewCORS()
 
 	mux := http.NewServeMux()
