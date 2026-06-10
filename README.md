@@ -57,6 +57,12 @@ When the limit is exceeded, `allowed` flips to `false` and `retry_after` reports
 - `limit` — requests allowed per window
 - `window` — window length in seconds
 
+**Which algorithm to pick**
+
+- **`fixed`** — simplest, lowest overhead. Counts requests in fixed time windows (e.g. 60s). Good default for most use cases.
+- **`sliding`** — smoother and more accurate at window boundaries, slightly more state. Pick this when bursts at window transitions matter (e.g. tight per-second limits).
+- **`token`** — token bucket. Allows controlled bursts above the average rate while keeping a long-term cap. Pick this when occasional spikes are acceptable but sustained overuse isn't.
+
 > **Note:** the `key` is a public bucketing identifier — it appears on the analytics dashboard. Use a stable, non-sensitive value (a user ID, API-key ID, or IP). Don't pass raw secrets or personal data as the key.
 
 **See it trip** — the first `limit` requests are allowed, the rest are rejected for the rest of the window:
