@@ -2,6 +2,13 @@
 
 A distributed rate-limiting microservice with an end-to-end analytics pipeline and a live dashboard.
 
+[![Go](https://img.shields.io/badge/Go-00ADD8?logo=go&logoColor=white&style=flat-square)](https://go.dev/)
+[![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white&style=flat-square)](https://www.python.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-000000?logo=nextdotjs&logoColor=white&style=flat-square)](https://nextjs.org/)
+[![Redis](https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white&style=flat-square)](https://redis.io/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white&style=flat-square)](https://www.postgresql.org/)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white&style=flat-square)](https://www.docker.com/)
+
 A Go + Redis rate limiter exposes `/check` for three algorithms — token bucket, sliding window, and fixed window — each implemented as an atomic Redis Lua script so state stays consistent under concurrent calls without distributed locks. Every decision is published to a Redis Stream, consumed by a Python worker that lands events in PostgreSQL and rolls them up into per-minute aggregates. A Go analytics API reads those aggregates, and a Next.js dashboard polls the API to render live totals, per-key timeseries, and rejection rates.
 
 **Live dashboard:** https://rate-limiter-alpha-ten.vercel.app
@@ -9,9 +16,19 @@ A Go + Redis rate limiter exposes `/check` for three algorithms — token bucket
 
 > _Hero screenshot goes here — dashboard with leaderboard, gauge, and charts._
 
+## Table of contents
+
+- [For Developers - Integration](#for-developers---integration)
+- [For Operators - Dashboard](#for-operators---dashboard)
+- [Architecture](#architecture)
+- [Benchmarks](#benchmarks)
+- [Running locally](#running-locally)
+- [Repo layout](#repo-layout)
+- [License](#license)
+
 ---
 
-## For Developers — Integration
+## For Developers - Integration
 
 Call `/check` from your service before handling a request. Pass the client identifier as `key` and pick an `algorithm`; the limiter returns the decision in both the HTTP status and a JSON body.
 
@@ -53,7 +70,7 @@ done
 
 ---
 
-## For Operators — Dashboard
+## For Operators - Dashboard
 
 The dashboard at https://rate-limiter-alpha-ten.vercel.app polls the analytics API every 7 seconds and shows traffic in real time — no setup, just open it.
 
