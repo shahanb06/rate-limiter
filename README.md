@@ -94,27 +94,22 @@ Read endpoints: `/analytics/keys`, `/analytics/summary`, `/analytics/timeseries`
 
 ## Architecture
 
-```
-                  ┌─────────────┐
-   POST /check ──▶│  Go limiter │──▶ atomic Lua script in Redis  (the hot path)
-                  │   (Fly.io)  │        token / sliding / fixed
-                  └──────┬──────┘
-                         │ XADD event
-                         ▼
-                  ┌─────────────┐
-                  │ Redis Stream│
-                  └──────┬──────┘
-                         │ XREADGROUP (consumer group "rl-workers")
-                         ▼
-                  ┌─────────────┐
-                  │Python worker│──▶ UPSERT per-minute aggregates ──▶ PostgreSQL (Neon)
-                  │   (Fly.io)  │        recompute, idempotent
-                  └─────────────┘
-                                              ▲
-   GET /analytics/* ◀── Go analytics API ─────┘  (reads Postgres, never Redis)
-            │
-            ▼
-   Next.js dashboard (Vercel) — polls every 7s
+```mermaid
+flowchart TD
+    Client[Client app] -->|POST /check| Limiter[Go limiter<br/>Fly.io]
+    Limiter -->|atomic Lua script<br/>token / sliding / fixed| Redis[(Redis<br/>Upstash)]
+    Limiter -.->|XADD event<br/>fire-and-forget| Stream[Redis Stream<br/>rl:events]
+    Stream -->|XREADGROUP<br/>consumer group rl-workers| Worker[Python worker<br/>Fly.io]
+    Worker -->|UPSERT per-minute<br/>idempotent aggregates| Postgres[(PostgreSQL<br/>Neon)]
+    AnalyticsAPI[Go analytics API<br/>Fly.io] -->|reads Postgres<br/>never Redis| Postgres
+    Dashboard[Next.js dashboard<br/>Vercel] -->|polls every 7s| AnalyticsAPI
+    
+    classDef hot fill:#dc2626,stroke:#7f1d1d,color:#fff
+    classDef cold fill:#1f2937,stroke:#374151,color:#e5e7eb
+    classDef store fill:#0e7490,stroke:#164e63,color:#fff
+    class Limiter,Redis hot
+    class Stream,Worker,AnalyticsAPI,Dashboard cold
+    class Postgres store
 ```
 
 **Design choices worth knowing:**
