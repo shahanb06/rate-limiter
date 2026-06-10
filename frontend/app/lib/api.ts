@@ -14,6 +14,8 @@ export type SummaryResp = {
   rejected: number;
   total: number;
   rejection_rate: number;
+  previous: { allowed: number; rejected: number; total: number };
+  delta: { allowed_pct: number | null; rejected_pct: number | null; total_pct: number | null };
 };
 
 export type TimeseriesPoint = {
@@ -76,8 +78,13 @@ async function getJSON<T>(path: string, signal?: AbortSignal): Promise<Result<T>
 export const getKeys = (signal?: AbortSignal) =>
   getJSON<KeysResp>("/analytics/keys", signal);
 
-export const getSummary = (key: string, signal?: AbortSignal) =>
-  getJSON<SummaryResp>(`/analytics/summary?key=${encodeURIComponent(key)}`, signal);
+export const getSummary = (key: string, window?: string, signal?: AbortSignal) =>
+  getJSON<SummaryResp>(
+    window
+      ? `/analytics/summary?key=${encodeURIComponent(key)}&window=${encodeURIComponent(window)}`
+      : `/analytics/summary?key=${encodeURIComponent(key)}`,
+    signal,
+  );
 
 export const getTimeseries = (key: string, since: string, signal?: AbortSignal) =>
   getJSON<TimeseriesResp>(

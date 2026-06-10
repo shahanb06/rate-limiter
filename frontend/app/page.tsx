@@ -99,7 +99,7 @@ export default function Dashboard() {
     const tick = async () => {
       const [lb, s, ts, alg] = await Promise.all([
         getLeaderboard(windowSel),
-        selected ? getSummary(selected) : Promise.resolve(null),
+        selected ? getSummary(selected, windowSel) : Promise.resolve(null),
         selected ? getTimeseries(selected, windowSel) : Promise.resolve(null),
         selected ? getSummaryByAlgorithm(selected) : Promise.resolve(null),
       ]);

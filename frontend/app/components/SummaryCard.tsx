@@ -15,7 +15,33 @@ type Tile = {
   valueClass: string;
   series: { v: number }[];
   strokeColor: string;
+  deltaPct: number | null;
+  // For Rejected, an increase is bad — invert the coloring so up=rose, down=emerald.
+  invertDeltaColor: boolean;
 };
+
+function DeltaIndicator({ pct, invert }: { pct: number | null; invert: boolean }) {
+  if (pct === null) {
+    return (
+      <div className="mt-1 text-xs tabular-nums text-slate-500">— vs prev</div>
+    );
+  }
+  const up = pct >= 0;
+  // Zero change reads as a wash regardless of invert.
+  let toneClass: string;
+  if (pct === 0) {
+    toneClass = "text-slate-500";
+  } else if (invert) {
+    toneClass = up ? "text-rose-400" : "text-emerald-400";
+  } else {
+    toneClass = up ? "text-emerald-400" : "text-rose-400";
+  }
+  return (
+    <div className={`mt-1 text-xs tabular-nums ${toneClass}`}>
+      {up ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}% vs prev
+    </div>
+  );
+}
 
 export default function SummaryCard({ summary, points }: Props) {
   const totalSeries = points.map((p) => ({ v: p.total }));
@@ -29,6 +55,8 @@ export default function SummaryCard({ summary, points }: Props) {
       valueClass: "text-slate-100",
       series: totalSeries,
       strokeColor: "#60a5fa",
+      deltaPct: summary?.delta?.total_pct ?? null,
+      invertDeltaColor: false,
     },
     {
       label: "Allowed",
@@ -36,6 +64,8 @@ export default function SummaryCard({ summary, points }: Props) {
       valueClass: "text-emerald-400",
       series: allowedSeries,
       strokeColor: "#22c55e",
+      deltaPct: summary?.delta?.allowed_pct ?? null,
+      invertDeltaColor: false,
     },
     {
       label: "Rejected",
@@ -43,6 +73,8 @@ export default function SummaryCard({ summary, points }: Props) {
       valueClass: "text-rose-400",
       series: rejectedSeries,
       strokeColor: "#f43f5e",
+      deltaPct: summary?.delta?.rejected_pct ?? null,
+      invertDeltaColor: true,
     },
   ];
 
@@ -61,6 +93,9 @@ export default function SummaryCard({ summary, points }: Props) {
           >
             {t.value}
           </div>
+          {summary && (
+            <DeltaIndicator pct={t.deltaPct} invert={t.invertDeltaColor} />
+          )}
           <div className="mt-2 h-8">
             {t.series.length >= 2 && (
               <ResponsiveContainer width="100%" height="100%">

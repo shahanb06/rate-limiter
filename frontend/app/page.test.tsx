@@ -34,7 +34,15 @@ import Dashboard from "./page";
 
 const okSummary = (key: string, total: number) => ({
   ok: true as const,
-  data: { key, allowed: 0, rejected: 0, total, rejection_rate: 0 },
+  data: {
+    key,
+    allowed: 0,
+    rejected: 0,
+    total,
+    rejection_rate: 0,
+    previous: { allowed: 0, rejected: 0, total: 0 },
+    delta: { allowed_pct: null, rejected_pct: null, total_pct: null },
+  },
 });
 const okTimeseries = (key: string) => ({
   ok: true as const,
@@ -189,7 +197,15 @@ describe("Dashboard", () => {
     vi.mocked(api.getLeaderboard).mockResolvedValue({ ok: false, error: "boom-leaderboard" });
     vi.mocked(api.getSummary).mockResolvedValue({
       ok: true,
-      data: { key: "A", allowed: 7, rejected: 3, total: 10, rejection_rate: 0.3 },
+      data: {
+        key: "A",
+        allowed: 7,
+        rejected: 3,
+        total: 10,
+        rejection_rate: 0.3,
+        previous: { allowed: 0, rejected: 0, total: 0 },
+        delta: { allowed_pct: null, rejected_pct: null, total_pct: null },
+      },
     });
     vi.mocked(api.getTimeseries).mockResolvedValue(okTimeseries("A"));
     vi.mocked(api.getSummaryByAlgorithm).mockResolvedValue(okAlg("A"));
