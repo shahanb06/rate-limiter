@@ -83,7 +83,7 @@ export default function SummaryCard({ summary, points }: Props) {
       {tiles.map((t) => (
         <div
           key={t.label}
-          className="rounded-lg border border-slate-800 bg-slate-900/60 p-4"
+          className="rounded-lg border border-slate-800 bg-[var(--surface)] p-4"
         >
           <div className="text-xs uppercase tracking-wide text-slate-500">
             {t.label}

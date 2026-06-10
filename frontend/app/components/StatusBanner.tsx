@@ -3,7 +3,7 @@
 type Tone = "info" | "warn" | "error";
 
 const tones: Record<Tone, string> = {
-  info: "border-slate-700 bg-slate-900/60 text-slate-300",
+  info: "border-slate-700 bg-[var(--surface)] text-slate-300",
   warn: "border-amber-800 bg-amber-950/40 text-amber-200",
   error: "border-rose-800 bg-rose-950/40 text-rose-200",
 };

@@ -37,7 +37,7 @@ export default function RejectionGauge({ summary }: Props) {
   const data = [{ name: "rejection", value: pct, fill: band.color }];
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+    <div className="rounded-lg border border-slate-800 bg-[var(--surface)] p-4">
       <div className="text-xs uppercase tracking-wide text-slate-500">
         Rejection Rate
       </div>

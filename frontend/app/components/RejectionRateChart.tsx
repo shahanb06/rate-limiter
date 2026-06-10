@@ -17,7 +17,7 @@ type Props = { points: TimeseriesPoint[] };
 export default function RejectionRateChart({ points }: Props) {
   if (points.length === 0) {
     return (
-      <div className="h-64 rounded-lg border border-dashed border-slate-800 bg-slate-900/40 p-3 flex items-center justify-center text-sm text-slate-500">
+      <div className="h-64 rounded-lg border border-dashed border-slate-800 bg-[var(--surface)] p-3 flex items-center justify-center text-sm text-slate-500">
         No data in this window yet.
       </div>
     );
@@ -32,7 +32,7 @@ export default function RejectionRateChart({ points }: Props) {
   const avg = rates.reduce((a, b) => a + b, 0) / rates.length;
 
   return (
-    <div className="h-64 rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+    <div className="h-64 rounded-lg border border-slate-800 bg-[var(--surface)] p-3">
       <div className="flex items-baseline justify-between px-1 pb-2">
         <span className="text-xs uppercase tracking-wide text-slate-500">
           Rejection rate over time

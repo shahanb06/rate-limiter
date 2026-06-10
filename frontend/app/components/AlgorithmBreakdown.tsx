@@ -17,14 +17,14 @@ type Props = { rows: SummaryByAlgoRow[] | null };
 export default function AlgorithmBreakdown({ rows }: Props) {
   if (rows === null) {
     return (
-      <div className="h-64 rounded-lg border border-slate-800 bg-slate-900/60 p-3 flex items-center justify-center text-sm text-slate-500">
+      <div className="h-64 rounded-lg border border-slate-800 bg-[var(--surface)] p-3 flex items-center justify-center text-sm text-slate-500">
         Loading per-algorithm breakdown…
       </div>
     );
   }
   if (rows.length === 0) {
     return (
-      <div className="h-64 rounded-lg border border-dashed border-slate-800 bg-slate-900/40 p-3 flex items-center justify-center text-sm text-slate-500">
+      <div className="h-64 rounded-lg border border-dashed border-slate-800 bg-[var(--surface)] p-3 flex items-center justify-center text-sm text-slate-500">
         No traffic for this key yet.
       </div>
     );
@@ -40,7 +40,7 @@ export default function AlgorithmBreakdown({ rows }: Props) {
   }));
 
   return (
-    <div className="h-64 rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+    <div className="h-64 rounded-lg border border-slate-800 bg-[var(--surface)] p-4">
       <div className="px-1 pb-2 text-xs uppercase tracking-wide text-slate-500">
         Per-algorithm breakdown
       </div>

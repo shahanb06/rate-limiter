@@ -13,21 +13,21 @@ type Props = {
 export default function LeaderboardTable({ rows, selected, onSelect }: Props) {
   if (rows === null) {
     return (
-      <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-6 text-center text-sm text-slate-500">
+      <div className="rounded-lg border border-slate-800 bg-[var(--surface)] p-6 text-center text-sm text-slate-500">
         Loading leaderboard…
       </div>
     );
   }
   if (rows.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-slate-800 bg-slate-900/40 p-6 text-center text-sm text-slate-500">
+      <div className="rounded-lg border border-dashed border-slate-800 bg-[var(--surface)] p-6 text-center text-sm text-slate-500">
         No keys yet.
       </div>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-900/60">
+    <div className="overflow-hidden rounded-lg border border-slate-800 bg-[var(--surface)]">
       <div className="border-b border-slate-800 px-4 py-2 text-xs uppercase tracking-wide text-slate-500">
         Keys leaderboard · ordered by volume · click a row to inspect
       </div>

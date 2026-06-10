@@ -18,7 +18,7 @@ type Props = { points: TimeseriesPoint[] };
 export default function TimeseriesChart({ points }: Props) {
   if (points.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">
+      <div className="rounded-lg border border-dashed border-slate-800 bg-[var(--surface)] p-12 text-center text-sm text-slate-500">
         No data in this window yet. The aggregator flushes every ~15s — send /check traffic and wait.
       </div>
     );
@@ -37,7 +37,7 @@ export default function TimeseriesChart({ points }: Props) {
   const avg = Math.round(totals.reduce((a, b) => a + b, 0) / totals.length);
 
   return (
-    <div className="h-72 rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+    <div className="h-72 rounded-lg border border-slate-800 bg-[var(--surface)] p-3">
       <div className="flex items-baseline justify-between px-1 pb-2">
         <span className="text-xs uppercase tracking-wide text-slate-500">
           Requests over time
