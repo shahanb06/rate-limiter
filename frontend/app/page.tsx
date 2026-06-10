@@ -34,7 +34,7 @@ function LiveStatus({ lastUpdated }: { lastUpdated: number | null }) {
   return (
     <span className="flex items-center gap-2">
       <span className="flex items-center gap-1.5">
-        <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+        <span className="inline-block h-2 w-2 rounded-full bg-[var(--allowed)] animate-pulse" />
         Live
       </span>
       <span aria-hidden>·</span>
@@ -49,7 +49,7 @@ function LiveStatus({ lastUpdated }: { lastUpdated: number | null }) {
 
 function SectionLabel({ children }: { children: string }) {
   return (
-    <h2 className="text-sm font-semibold tracking-wide text-slate-400">
+    <h2 className="text-sm font-semibold tracking-wide text-[var(--muted)]">
       {children}
     </h2>
   );
