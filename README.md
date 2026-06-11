@@ -118,6 +118,8 @@ flowchart TD
 - **Event sourcing decouples the hot path.** `/check` only fires an event into a Redis Stream; it never writes to Postgres. Analytics happen out of band, so heavy queries can never slow down a rate-limit decision.
 - **Idempotent aggregation.** The worker consumes via a consumer group (at-least-once delivery) and writes absolute per-minute values rather than incrementing — recompute, don't add. The worker can restart or replay with no double-counting.
 - **Read API isolated from Redis.** Analytics endpoints read only from Postgres, keeping the rate-limit hot path clean.
+- **Postgres-optional limiter.** Because `/check` only writes to Redis (and pushes a fire-and-forget event), an outage in the analytics Postgres never affects rate-limit decisions. The limiter degrades gracefully: rate-limiting keeps working, only dashboard data goes stale until Postgres comes back.
+- **Windowed comparisons on the dashboard.** Summary KPIs show current-window totals (5m / 1h / 6h / 24h) with a period-over-period delta versus the immediately preceding equal-length window. The aggregator's per-minute granularity is what makes arbitrary windowing cheap.
 
 **Stack:** Go 1.25 · Redis (Upstash) · Python 3.10+ · PostgreSQL (Neon) · Next.js · Docker · deployed on Fly.io and Vercel.
 
