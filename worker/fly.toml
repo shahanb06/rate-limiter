@@ -6,6 +6,11 @@
 app = 'rate-limiter-worker-shahanb06'
 primary_region = 'iad'
 
+# Keep the worker always running so the Redis stream is continuously drained.
+# Without this, Fly stops the machine after idle periods and per-key time-series
+# data accumulates as a Redis stream backlog until something wakes the worker.
+auto_stop_machines = false
+
 [build]
 
 [[vm]]
