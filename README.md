@@ -11,7 +11,7 @@ A distributed rate-limiting microservice with an end-to-end analytics pipeline a
 
 A Go + Redis rate limiter exposes `/check` for three algorithms — token bucket, sliding window, and fixed window — each implemented as an atomic Redis Lua script so state stays consistent under concurrent calls without distributed locks. Every decision is published to a Redis Stream, consumed by a Python worker that lands events in PostgreSQL and rolls them up into per-minute aggregates. A Go analytics API reads those aggregates, and a Next.js dashboard polls the API to render live totals, per-key timeseries, and rejection rates.
 
-**Live dashboard:** https://rate-limiter-alpha-ten.vercel.app
+**Live dashboard:** https://rate-limiter-alpha-ten.vercel.app  
 **Live API:** https://rate-limiter-shahanb06.fly.dev
 
 > _Hero screenshot goes here — dashboard with leaderboard, gauge, and charts._
@@ -119,7 +119,7 @@ flowchart TD
 - **Idempotent aggregation.** The worker consumes via a consumer group (at-least-once delivery) and writes absolute per-minute values rather than incrementing — recompute, don't add. The worker can restart or replay with no double-counting.
 - **Read API isolated from Redis.** Analytics endpoints read only from Postgres, keeping the rate-limit hot path clean.
 
-**Stack:** Go 1.25 · Redis (Upstash) · Python 3.12 · PostgreSQL (Neon) · Next.js · Docker · deployed on Fly.io and Vercel.
+**Stack:** Go 1.25 · Redis (Upstash) · Python 3.10+ · PostgreSQL (Neon) · Next.js · Docker · deployed on Fly.io and Vercel.
 
 ---
 
