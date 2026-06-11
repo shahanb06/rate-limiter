@@ -14,7 +14,7 @@ A Go + Redis rate limiter exposes `/check` for three algorithms — token bucket
 **Live dashboard:** https://rate-limiter-alpha-ten.vercel.app  
 **Live API:** https://rate-limiter-shahanb06.fly.dev
 
-> _Hero screenshot goes here — dashboard with leaderboard, gauge, and charts._
+![Rate Limiter Dashboard — 1h window showing per-key leaderboard, summary cards, and rejection gauge](docs/dashboard.png)
 
 ## Table of contents
 
@@ -122,6 +122,8 @@ flowchart TD
 - **Windowed comparisons on the dashboard.** Summary KPIs show current-window totals (5m / 1h / 6h / 24h) with a period-over-period delta versus the immediately preceding equal-length window. The aggregator's per-minute granularity is what makes arbitrary windowing cheap.
 
 **Stack:** Go 1.25 · Redis (Upstash) · Python 3.10+ · PostgreSQL (Neon) · Next.js · Docker · deployed on Fly.io and Vercel.
+
+![Per-key drill-down — algorithm breakdown and requests-over-time for abusive_bot](docs/dashboard-drilldown.png)
 
 ---
 
