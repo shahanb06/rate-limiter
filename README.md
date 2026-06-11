@@ -147,3 +147,13 @@ docker compose up
 
 Compose starts Redis and Postgres with healthchecks, waits for both to be healthy, then builds and starts the limiter (on `localhost:8080`) and the worker. The Postgres schema is loaded automatically on first boot. Local credentials are baked into the compose file for convenience; production uses managed Redis (Upstash) and Postgres (Neon) with secrets injected at deploy time.
 
+**Dashboard**
+
+The Next.js dashboard runs separately from compose:
+
+```bash
+cd frontend && npm install && npm run dev
+```
+
+Open `http://localhost:3000`. The dev server defaults to `http://localhost:8080` for the backend, so no `NEXT_PUBLIC_API_BASE_URL` is needed when compose is running locally.
+
