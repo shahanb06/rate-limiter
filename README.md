@@ -168,3 +168,9 @@ frontend/     — Next.js dashboard
 benchmarks/   — k6 load test scripts and notes
 ```
 
+---
+
+## License
+
+MIT — see LICENSE.
+
