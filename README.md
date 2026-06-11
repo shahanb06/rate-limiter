@@ -157,3 +157,14 @@ cd frontend && npm install && npm run dev
 
 Open `http://localhost:3000`. The dev server defaults to `http://localhost:8080` for the backend, so no `NEXT_PUBLIC_API_BASE_URL` is needed when compose is running locally.
 
+---
+
+## Repo layout
+
+```
+backend/      — Go limiter + analytics API
+worker/       — Python aggregation worker
+frontend/     — Next.js dashboard
+benchmarks/   — k6 load test scripts and notes
+```
+
