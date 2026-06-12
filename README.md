@@ -167,7 +167,7 @@ Open `http://localhost:3000`. The dev server defaults to `http://localhost:8080`
 backend/      — Go limiter + analytics API
 worker/       — Python aggregation worker
 frontend/     — Next.js dashboard
-benchmarks/   — k6 load test scripts and notes
+benchmarks/   — k6 benchmark notes and results
 ```
 
 ---
